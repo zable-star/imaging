@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# IDE
+.idea/
+
+# Model files
+*.pth
+
+# Generated artifacts
+artifacts/
+
+# Large datasets (use Git LFS if needed)
+origindataset/
+obj_dataset/
+dataset/
+dataset_gate_tests/
