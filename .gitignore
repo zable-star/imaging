@@ -13,6 +13,9 @@ __pycache__/
 # Generated artifacts
 artifacts/
 
+# Claude Code
+.claude/
+
 # Large datasets (use Git LFS if needed)
 origindataset/
 obj_dataset/

@@ -1,149 +1,128 @@
 # 切片注意力分类基线
 
-这个文件夹保存的是一个简化版目标分类基线，用来验证：
+基于 ModelNet10 的五分类实验，验证 **同一物体的多张选通切片是否能够支持分类，以及网络更依赖哪些切片**。
 
-**同一物体的多张单色切片，是否能够支持分类，以及网络更依赖哪些切片。**
-
-这版模型暂时去掉了多模光纤传播模块，先专注于“切片本身的信息是否有效”。
+这版模型暂时去掉了多模光纤传播模块，先专注于"切片本身的信息是否有效"。
 
 ## 核心思路
 
-- 一个样本 = 同一物体的全部切片
+- 一个样本 = 同一物体的3张正交切片（gate_0 / gate_1 / gate_2）
 - 每张切片都是单通道灰度图
-- 使用共享 CNN 分别提取每张切片的特征
-- 使用注意力模块学习每张切片的重要性
-- 对切片特征加权融合后进行分类
+- 使用共享 CNN（`SliceEncoder`）分别提取每张切片的128维特征
+- 使用注意力模块学习每张切片的重要性权重
+- 对切片特征加权融合后送入分类器，输出5类概率
+
+## 数据集
+
+使用 ModelNet10 中的5个类别，每个类别80个训练模型 + 20个测试模型，共500个 OBJ 文件：
+
+| 类别 | 标签 |
+|------|------|
+| chair | 0 |
+| desk | 1 |
+| sofa | 2 |
+| bed | 3 |
+| toilet | 4 |
 
 ## 输入形式
 
-以一个物体包含 3 张切片为例：
+模型输入张量形状为 `[num_slices, 1, H, W]`，默认 `num_slices=3, H=W=224`。
 
-- `gate_0`
-- `gate_1`
-- `gate_2`
-
-模型输入张量形状为：
-
-`[num_slices, 1, H, W]`
-
-当前这版默认设置为：
-
-- `num_slices = 3`
-- `H = W = 224`
-
-也就是说，一个样本不再被视为普通的 3 通道图像，而是被视为：
-
-**“同一物体的 3 张顺序切片”**
+一个样本不被视为普通的3通道图像，而是 **同一物体的3张顺序切片**。
 
 ## 文件说明
 
-- [dataset.py](/E:/wjz/test1/dataset/dataset_obj/slice_attention_baseline/dataset.py)  
-  负责按“一个物体对应多张切片”的方式读取数据，并自动按 `gate_0 / gate_1 / gate_2` 排序。
+| 文件 | 作用 |
+|------|------|
+| `dataset.py` | 按"一个物体对应多张切片"的方式读取数据，自动按 gate_0 / gate_1 / gate_2 排序 |
+| `model.py` | 模型结构：`SliceEncoder`（CNN编码器）+ `SliceAttentionClassifier`（注意力融合+分类） |
+| `train.py` | 训练入口：构建数据集、划分训练/验证集、训练、保存结果 |
+| `analyze_attention.py` | 分析验证集注意力权重分布，生成每个样本的注意力柱状图和各类别/各gate的均值图 |
+| `analyze_gate_sparsity.py` | 统计各gate切片图像的空白比例和平均强度 |
+| `convert_off_to_obj_dataset.py` | 将 ModelNet10 的 OFF 文件转换为 OBJ 文件 |
 
-- [model.py](/E:/wjz/test1/dataset/dataset_obj/slice_attention_baseline/model.py)  
-  定义模型结构，包括：
-  - 切片编码器 `SliceEncoder`
-  - 注意力分类器 `SliceAttentionClassifier`
+## 数据准备流程
 
-- [train.py](/E:/wjz/test1/dataset/dataset_obj/slice_attention_baseline/train.py)  
-  训练入口，负责：
-  - 构建数据集
-  - 划分训练集/验证集
-  - 训练模型
-  - 保存结果文件
+### 1. OFF → OBJ 转换
 
-## 当前使用的数据集路径
+```powershell
+python convert_off_to_obj_dataset.py
+```
 
-- `E:\wjz\test1\dataset\dataset_obj\chair_gated_physical`
-- `E:\wjz\test1\dataset\dataset_obj\desk_gated_physical`
+输入：`origindataset\ModelNet10\ModelNet10\<class>\<split>\*.off`
 
-这两个目录中的图片文件名格式为：
+输出：`obj_dataset\<class>\<split>\*.obj`
 
-- `chair_0001_gate_0.png`
-- `chair_0001_gate_1.png`
-- `chair_0001_gate_2.png`
+### 2. Blender 渲染选通切片
 
-程序会自动把同一物体的不同 gate 图像组合成一个样本。
+```powershell
+blender --background --python origindataset\gated_blender_physical.py -- --input-root obj_dataset --output-root dataset
+```
+
+输出：`dataset\<class>\*_gate_0.png / *_gate_1.png / *_gate_2.png`
+
+### 3. 训练
+
+```powershell
+python train.py
+```
+
+可选参数：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--dataset-root` | `dataset/` | 切片数据集路径 |
+| `--classes` | chair desk sofa bed toilet | 类别列表 |
+| `--epochs` | 30 | 训练轮数 |
+| `--batch-size` | 8 | 批大小 |
+| `--lr` | 1e-3 | 学习率 |
+| `--val-ratio` | 0.2 | 验证集比例 |
+| `--seed` | 42 | 随机种子 |
 
 ## 输出结果
 
-训练结果保存在：
+训练结果保存在 `artifacts/` 目录下：
 
-- `E:\wjz\test1\dataset\dataset_obj\slice_attention_baseline\artifacts`
+| 文件 | 说明 |
+|------|------|
+| `training_curves.png` | 训练损失与验证精度曲线 |
+| `best_confusion_matrix.png` | 最佳验证结果对应的混淆矩阵 |
+| `val_attention_weights.csv` | 验证集每个样本的预测/真实标签、注意力权重、类别概率 |
+| `attention_per_sample.png` | 每个验证样本的注意力权重堆叠柱状图 |
+| `attention_mean_by_gate.png` | 各gate的全局和按类别平均注意力权重 |
+| `summary.json` | 训练结果摘要 |
 
-主要输出文件包括：
+### val_attention_weights.csv 字段说明
 
-- `training_curves.png`：训练损失与验证精度曲线
-- `best_confusion_matrix.png`：最佳验证结果对应的混淆矩阵
-- `val_attention_weights.csv`：验证集中每个样本的注意力权重
-- `summary.json`：训练结果摘要
+| 字段 | 含义 |
+|------|------|
+| `pred` / `gt` | 预测/真实类别标签（0-4） |
+| `attn_gate_0` / `attn_gate_1` / `attn_gate_2` | 三个切片的注意力权重（softmax归一化，和为1） |
+| `prob_class_0` ~ `prob_class_4` | 模型对5个类别的预测概率（和为1） |
 
-其中 `val_attention_weights.csv` 最值得关注，因为它可以帮助分析：
-
-- 网络更关注哪一张切片
-- 哪些 gate 对分类贡献更大
-
-## 运行方式
-
-```powershell
-python E:\wjz\test1\dataset\dataset_obj\slice_attention_baseline\train.py
-```
-
-## Five-class ModelNet10 pipeline
-
-This workspace now includes a five-class data preparation flow based on
-`origindataset\ModelNet10\ModelNet10`.
-
-Selected classes:
-
-- `chair`
-- `desk`
-- `sofa`
-- `bed`
-- `toilet`
-
-Default size is moderate: `80` train models and `20` test models per class,
-for `500` OBJ files total.
-
-1. Convert OFF files to OBJ:
+## 运行分析
 
 ```powershell
-python E:\wjz\test1\dataset\dataset_obj\slice_attention_baseline\convert_off_to_obj_dataset.py
+# 注意力权重分析
+python analyze_attention.py
+
+# 切片稀疏度统计
+python analyze_gate_sparsity.py --dataset-root dataset
 ```
 
-Output:
-
-```text
-E:\wjz\test1\dataset\dataset_obj\slice_attention_baseline\obj_dataset\<class>\<split>\*.obj
-```
-
-2. Render physically gated slices in Blender:
+## 运行测试
 
 ```powershell
-blender --background --python E:\wjz\test1\dataset\dataset_obj\slice_attention_baseline\origindataset\gated_blender_physical.py -- --input-root E:\wjz\test1\dataset\dataset_obj\slice_attention_baseline\obj_dataset --output-root E:\wjz\test1\dataset\dataset_obj\slice_attention_baseline\dataset
-```
-
-Output:
-
-```text
-E:\wjz\test1\dataset\dataset_obj\slice_attention_baseline\dataset\<class>\*_gate_0.png
-E:\wjz\test1\dataset\dataset_obj\slice_attention_baseline\dataset\<class>\*_gate_1.png
-E:\wjz\test1\dataset\dataset_obj\slice_attention_baseline\dataset\<class>\*_gate_2.png
-```
-
-3. Train the five-class classifier:
-
-```powershell
-python E:\wjz\test1\dataset\dataset_obj\slice_attention_baseline\train.py
+python -m pytest tests/ -v
 ```
 
 ## 这版基线的意义
 
-这版基线的作用是先回答一个更基础的问题：
+这版基线先回答一个更基础的问题：
 
 **不考虑多模光纤传播时，同一物体的多张选通切片是否已经具有足够的分类信息？**
 
-如果这一步成立，那么后续就可以进一步研究：
+如果这一步成立，后续可以进一步研究：
 
 - 如何把这些切片映射到光学输入
 - 如何在多模光纤中进行物理传播
