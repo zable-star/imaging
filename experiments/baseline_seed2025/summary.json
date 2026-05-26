@@ -1,0 +1,26 @@
+{
+  "num_samples": 500,
+  "num_slices_per_object": 3,
+  "classes": [
+    "chair",
+    "desk",
+    "sofa",
+    "bed",
+    "toilet"
+  ],
+  "best_val_acc": 0.93,
+  "seed": 2025,
+  "epochs": 30,
+  "batch_size": 8,
+  "val_ratio": 0.2,
+  "expected_num_slices": 3,
+  "lr": 0.0003,
+  "min_lr": 1e-05,
+  "weight_decay": 0.0001,
+  "label_smoothing": 0.05,
+  "grad_clip": 1.0,
+  "ema_alpha": 0.35,
+  "dataset_root": "E:\\wjz\\test1\\dataset\\dataset_obj\\slice_attention_baseline\\dataset",
+  "artifact_dir": "E:\\wjz\\test1\\dataset\\dataset_obj\\slice_attention_baseline\\experiments\\baseline_seed2025",
+  "model_path": "E:\\wjz\\test1\\dataset\\dataset_obj\\slice_attention_baseline\\experiments\\baseline_seed2025\\slice_attention_model.pth"
+}

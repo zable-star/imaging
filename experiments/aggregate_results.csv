@@ -1,0 +1,2 @@
+experiment,num_runs,mean_best_val_acc,std_best_val_acc,min_best_val_acc,max_best_val_acc,seeds
+baseline,3,0.9333333333333333,0.01527525231651942,0.92,0.95,42 123 2025

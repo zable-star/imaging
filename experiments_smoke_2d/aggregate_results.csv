@@ -1,0 +1,2 @@
+experiment,num_runs,mean_best_val_acc,std_best_val_acc,min_best_val_acc,max_best_val_acc,seeds
+smoke_single_gate_black_g1,1,0.24,0.0,0.24,0.24,42

@@ -1,12 +1,13 @@
 # 切片注意力分类基线
 
-基于 ModelNet10 的五分类实验，验证 **同一物体的多张选通切片是否能够支持分类，以及网络更依赖哪些切片**。
+基于 ModelNet10 的五个物体类别和一个二维异常类别，验证 **同一物体的多张选通切片是否能够支持分类，以及网络更依赖哪些切片**。
 
 这版模型暂时去掉了多模光纤传播模块，先专注于"切片本身的信息是否有效"。
 
 ## 核心思路
 
-- 一个样本 = 同一物体的3张正交切片（gate_0 / gate_1 / gate_2）
+- 一个普通物体样本 = 同一物体的3张正交切片（gate_0 / gate_1 / gate_2）
+- 一个 `image2d` 异常样本 = 只有一个 gate 含有二维图像信息，其它 gate 为全黑图
 - 每张切片都是单通道灰度图
 - 使用共享 CNN（`SliceEncoder`）分别提取每张切片的128维特征
 - 使用注意力模块学习每张切片的重要性权重
@@ -14,7 +15,7 @@
 
 ## 数据集
 
-使用 ModelNet10 中的5个类别，每个类别80个训练模型 + 20个测试模型，共500个 OBJ 文件：
+使用 ModelNet10 中的5个类别，每类100个 gated slice 样本，并额外生成一个 `image2d` 二维异常类别：
 
 | 类别 | 标签 |
 |------|------|
@@ -23,6 +24,7 @@
 | sofa | 2 |
 | bed | 3 |
 | toilet | 4 |
+| image2d | 5 |
 
 ## 输入形式
 
@@ -61,6 +63,16 @@ blender --background --python origindataset\gated_blender_physical.py -- --input
 
 输出：`dataset\<class>\*_gate_0.png / *_gate_1.png / *_gate_2.png`
 
+### 2.5 生成二维异常类别
+
+```powershell
+python make_image2d_class.py --overwrite
+```
+
+输出：`dataset\image2d\*_gate_0.png / *_gate_1.png / *_gate_2.png`
+
+每个 `image2d` 样本只有一个 gate 从原有物体切片复制而来，其余 gate 是全黑图；`dataset\image2d\manifest.csv` 会记录来源。
+
 ### 3. 训练
 
 ```powershell
@@ -72,7 +84,7 @@ python train.py
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `--dataset-root` | `dataset/` | 切片数据集路径 |
-| `--classes` | chair desk sofa bed toilet | 类别列表 |
+| `--classes` | chair desk sofa bed toilet image2d | 类别列表 |
 | `--epochs` | 30 | 训练轮数 |
 | `--batch-size` | 8 | 批大小 |
 | `--lr` | 1e-3 | 学习率 |
@@ -120,7 +132,7 @@ python -m pytest tests/ -v
 
 这版基线先回答一个更基础的问题：
 
-**不考虑多模光纤传播时，同一物体的多张选通切片是否已经具有足够的分类信息？**
+**同一物体的多张选通切片是否已经具有足够的分类信息？**
 
 如果这一步成立，后续可以进一步研究：
 
