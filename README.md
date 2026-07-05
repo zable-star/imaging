@@ -1,24 +1,86 @@
-# 切片注意力分类基线
+# 距离选通多切片目标识别基线
 
-基于 ModelNet10 的五个物体类别和一个二维异常类别，验证 **同一物体的多张选通切片是否能够支持分类，以及网络更依赖哪些切片**。
+本项目面向 **军事三维目标识别与二维假目标判别**。当前阶段先用 Blender 距离选通仿真生成多 gate 图像序列，再用轻量神经网络验证两件事：
 
-这版模型暂时去掉了多模光纤传播模块，先专注于"切片本身的信息是否有效"。
+1. 同一目标在不同选通门下的多张切片是否能提供互补判别信息。
+2. 网络是否能区分真实三维目标的多 gate 响应和二维平面假目标/异常输入。
 
-## 核心思路
+最终目标是把该基线发展为可服务论文和后续 **多模光神经网络高速目标识别** 项目的前置平台：先在电子神经网络中证明数据、物理仿真和判别逻辑成立，再逐步迁移到光学编码、光纤传输和光电联合识别框架。
 
-- 一个普通物体样本 = 同一物体的3张正交切片（gate_0 / gate_1 / gate_2）
-- 一个 `image2d` 异常样本 = 只有一个 gate 含有二维图像信息，其它 gate 为全黑图
-- 每张切片都是单通道灰度图
-- 使用共享 CNN（`SliceEncoder`）分别提取每张切片的128维特征
-- 使用注意力模块学习每张切片的重要性权重
-- 对切片特征加权融合后送入分类器，输出5类概率
+## 当前研究定位
 
-## 数据集
+项目目前分为两条证据线。
 
-使用 ModelNet10 中的5个类别，每类100个 gated slice 样本，并额外生成一个 `image2d` 二维异常类别：
+| 方向 | 数据设置 | 目的 |
+|---|---|---|
+| 三维目标识别 | `chair / desk / sofa / bed / toilet` 或后续军事三维类别 | 验证多 gate 距离选通图像是否支持目标类别识别 |
+| 二维假目标判别 | 在真实三维类别外加入 `image2d` 类 | 验证网络是否能识别二维平面/异常 gate 序列 |
+
+现阶段 ModelNet10 家具类别主要作为可控基线；军事三维目标是最终应用方向。由于军事 3D 模型数量少、标签噪声大，建议采用“先稳定基线，再小样本迁移到军事目标”的路线，而不是直接在低质量军事数据上强行训练。
+
+## 方法概览
+
+每个样本由同一目标的多张距离选通切片组成：
+
+```text
+sample = [gate_0.png, gate_1.png, gate_2.png, ...]
+```
+
+这些 gate 不是普通 RGB 通道，而是不同深度响应窗口下的灰度观测。网络输入形状为：
+
+```text
+[B, S, C, H, W]
+```
+
+其中 `B` 是 batch size，`S` 是 gate 数量，`C=1`，默认图像尺寸为 `224 x 224`。
+
+当前模型结构：
+
+```text
+每张 gate 图像
+    -> 共享 CNN 编码器 SliceEncoder
+    -> gate-level 特征 f_i
+    -> mean / attention / concat / attention_residual 融合
+    -> MLP 分类器
+    -> 类别 logits
+```
+
+当前 attention 是轻量 MLP 打分：
+
+```text
+alpha_i = softmax(MLP(f_i))
+f_att = sum_i alpha_i f_i
+```
+
+它不是 Transformer/QKV attention。这里的 attention 权重应解释为 **gate-level discriminative contribution（门控切片级判别贡献）**，不要解释成视觉显著性。
+
+## 核心创新点
+
+项目建议围绕以下创新点展开，而不是单纯追求换大网络：
+
+1. **距离选通物理仿真驱动的数据构建**  
+   用 Blender 模拟不同 gate spacing、门宽、脉宽、距离衰减和背景退化，使数据具备明确物理含义。
+
+2. **多 gate 判别贡献分析**  
+   比较 `mean / attention / concat / attention_residual`，说明多深度选通观测如何影响分类，以及网络在不同 gate 上的判别依赖。
+
+3. **二维假目标与真实三维目标的序列差异建模**  
+   二维假目标不是简单的一张假图，而是“整目标轮廓在多个 gate 中强度随选通响应变化”的异常序列。该设计更接近激光选通下平面诱饵的物理表现。
+
+4. **面向小样本军事目标的迁移训练路线**  
+   先在 ModelNet10/可控仿真上预训练 gate 融合网络，再用少量筛查后的军事 3D 模型微调，重点体现数据治理、物理建模和迁移学习能力。
+
+5. **向多模光神经网络的可融合接口**  
+   当前 CNN 融合模型可作为电子基线；后续可把 gate stack 编码到光学输入，将中间传播替换为多模光纤散斑/光学层，再比较电子网络和光电联合网络的速度、精度与鲁棒性。
+
+## 数据集设计
+
+### 1. 可控基线数据
+
+默认使用 ModelNet10 中的五个类别：
 
 | 类别 | 标签 |
-|------|------|
+|---|---:|
 | chair | 0 |
 | desk | 1 |
 | sofa | 2 |
@@ -26,118 +88,176 @@
 | toilet | 4 |
 | image2d | 5 |
 
-## 输入形式
+其中 `image2d` 是二维异常/假目标类，用于检验网络是否能识别非真实三维 gate 序列。
 
-模型输入张量形状为 `[num_slices, 1, H, W]`，默认 `num_slices=3, H=W=224`。
+### 2. 二维假目标建模原则
 
-一个样本不被视为普通的3通道图像，而是 **同一物体的3张顺序切片**。
+对平面二维假目标，更合理的 gate 序列不是“只有一小部分物体出现”，而是：
 
-## 文件说明
-
-| 文件 | 作用 |
-|------|------|
-| `dataset.py` | 按"一个物体对应多张切片"的方式读取数据，自动按 gate_0 / gate_1 / gate_2 排序 |
-| `model.py` | 模型结构：`SliceEncoder`（CNN编码器）+ `SliceAttentionClassifier`（注意力融合+分类） |
-| `train.py` | 训练入口：构建数据集、划分训练/验证集、训练、保存结果 |
-| `analyze_attention.py` | 分析验证集注意力权重分布，生成每个样本的注意力柱状图和各类别/各gate的均值图 |
-| `analyze_gate_sparsity.py` | 统计各gate切片图像的空白比例和平均强度 |
-| `convert_off_to_obj_dataset.py` | 将 ModelNet10 的 OFF 文件转换为 OBJ 文件 |
-
-## 数据准备流程
-
-### 1. OFF → OBJ 转换
-
-```powershell
-python convert_off_to_obj_dataset.py
+```text
+整个目标轮廓在各 gate 中都保持一致，
+但强度根据平面目标深度与接收门响应逐渐变弱，甚至消失。
 ```
 
-输入：`origindataset\ModelNet10\ModelNet10\<class>\<split>\*.off`
+也就是说，二维假目标的关键异常不是形状残缺，而是缺少真实三维目标应有的深度分层响应。
 
-输出：`obj_dataset\<class>\<split>\*.obj`
+### 3. 军事三维目标数据
 
-### 2. Blender 渲染选通切片
+军事数据建议采用筛查后的小样本策略：
 
-```powershell
-blender --background --python origindataset\gated_blender_physical.py -- --input-root obj_dataset --output-root dataset
+| 阶段 | 目标 |
+|---|---|
+| 粗筛 | 去除标签错误、空模型、非目标类别模型 |
+| 精筛 | 每类保留外形清楚、尺度正常、方向可统一的模型 |
+| 渲染 | 使用相同 gate 参数生成真三维目标序列 |
+| 假目标 | 由整目标轮廓生成平面回波序列 |
+| 训练 | 用 ModelNet10 预训练权重迁移到军事类别 |
+
+军事类别数量不宜一开始过多。建议先做 3 到 5 类，例如坦克、飞机、直升机、军车、导弹车。每类优先保证质量，再扩大数量。
+
+## 训练任务安排
+
+### 任务 A：六分类二维假目标判别
+
+目标：
+
+```text
+chair / desk / sofa / bed / toilet / image2d
 ```
 
-输出：`dataset\<class>\*_gate_0.png / *_gate_1.png / *_gate_2.png`
+用途：
 
-### 2.5 生成二维异常类别
+- 证明网络能区分真实三维 gate stack 和二维异常 gate stack。
+- 输出混淆矩阵、attention 权重和 per-class accuracy。
+- 作为 PPT 和论文中“假目标判别能力”的第一组证据。
 
-```powershell
-python make_image2d_class.py --overwrite
-```
-
-输出：`dataset\image2d\*_gate_0.png / *_gate_1.png / *_gate_2.png`
-
-每个 `image2d` 样本只有一个 gate 从原有物体切片复制而来，其余 gate 是全黑图；`dataset\image2d\manifest.csv` 会记录来源。
-
-### 3. 训练
+推荐命令：
 
 ```powershell
-python train.py
+python run_experiments.py --experiment-name six_class_attention_residual_seedmatched --dataset-root dataset --fusion-mode attention_residual --seeds 42 332 2026 --epochs 30 --batch-size 16
 ```
 
-可选参数：
+### 任务 B：五分类物理参数消融
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `--dataset-root` | `dataset/` | 切片数据集路径 |
-| `--classes` | chair desk sofa bed toilet image2d | 类别列表 |
-| `--epochs` | 30 | 训练轮数 |
-| `--batch-size` | 8 | 批大小 |
-| `--lr` | 1e-3 | 学习率 |
-| `--val-ratio` | 0.2 | 验证集比例 |
-| `--seed` | 42 | 随机种子 |
+目标：
+
+```text
+chair / desk / sofa / bed / toilet
+```
+
+用途：
+
+- 分析 gate spacing、门宽、脉宽等物理参数对识别效果的影响。
+- 避免 `image2d` 黑 gate 模式干扰物理参数结论。
+
+推荐命令：
+
+```powershell
+python run_physical_5class_experiments.py -- --experiment-name phys_gate_spacing_large_attention_residual --dataset-root dataset_gate_spacing_large --fusion-mode attention_residual --seeds 42 332 2026 --epochs 30 --batch-size 16
+```
+
+### 任务 C：融合方式对比
+
+至少比较：
+
+| 融合方式 | 作用 |
+|---|---|
+| `mean` | 无学习权重的平均融合基线 |
+| `attention` | 可解释 gate 权重 |
+| `attention_residual` | 当前主模型，兼顾 gate 权重和特征保留 |
+| `concat` | 高信息量经验基线，但解释性较弱 |
+
+论文中不建议把 `concat` 写成理论上限，只写成已测试方法中的高精度经验基线。
+
+### 任务 D：军事小样本迁移
+
+建议顺序：
+
+1. 用可控数据训练 `attention_residual` 基线。
+2. 冻结或半冻结 `SliceEncoder`，替换分类头。
+3. 用少量高质量军事三维模型微调。
+4. 与从零训练对比。
+5. 报告准确率、混淆矩阵、类别间混淆原因和 gate-level attention。
+
+## 主要文件
+
+| 文件/目录 | 作用 |
+|---|---|
+| `dataset.py` | 按“一个样本对应多张 gate 图像”的方式读取数据 |
+| `model.py` | 定义 `mean / attention / concat / attention_residual` 四种融合模型 |
+| `train.py` | 单次训练入口，保存模型、曲线、混淆矩阵和 attention CSV |
+| `run_experiments.py` | 多随机种子、多设置实验管理 |
+| `run_physical_5class_experiments.py` | 五分类物理消融包装脚本 |
+| `make_image2d_class.py` | 构建二维假目标/异常类 |
+| `dataset_new/generate.py` | 从 Objaverse 关键词筛选军事 3D 模型候选 |
+| `dataset_new/review_dataset.py` | 辅助人工筛查军事模型 |
+| `origindataset/gated_blender_physical.py` | Blender 距离选通渲染脚本 |
+| `scripts/run_truck_gate_renders.ps1` | 单个军事车辆真假目标渲染示例 |
+| `plot_experiment_results.py` | 汇总实验结果并绘图 |
+| `writing/` | 论文草稿、交接文档、实验解释与项目路线 |
+| `writing/project_roadmap_2026-07-05.md` | 当前训练、创新点提升、军事目标迁移和光神经网络融合路线图 |
+| `presentation_html/` | 文献分享 PPT HTML 与讲稿材料 |
 
 ## 输出结果
 
-训练结果保存在 `artifacts/` 目录下：
+每次训练通常输出：
 
 | 文件 | 说明 |
-|------|------|
-| `training_curves.png` | 训练损失与验证精度曲线 |
-| `best_confusion_matrix.png` | 最佳验证结果对应的混淆矩阵 |
-| `val_attention_weights.csv` | 验证集每个样本的预测/真实标签、注意力权重、类别概率 |
-| `attention_per_sample.png` | 每个验证样本的注意力权重堆叠柱状图 |
-| `attention_mean_by_gate.png` | 各gate的全局和按类别平均注意力权重 |
-| `summary.json` | 训练结果摘要 |
+|---|---|
+| `summary.json` | 实验配置与最佳验证结果 |
+| `training_history.csv` | 每轮训练损失和验证精度 |
+| `training_curves.png` | 训练曲线 |
+| `best_confusion_matrix.png` | 最佳模型混淆矩阵 |
+| `val_attention_weights.csv` | 每个验证样本的预测、真实标签、gate 权重和类别概率 |
 
-### val_attention_weights.csv 字段说明
+多次实验会汇总到：
 
-| 字段 | 含义 |
-|------|------|
-| `pred` / `gt` | 预测/真实类别标签（0-4） |
-| `attn_gate_0` / `attn_gate_1` / `attn_gate_2` | 三个切片的注意力权重（softmax归一化，和为1） |
-| `prob_class_0` ~ `prob_class_4` | 模型对5个类别的预测概率（和为1） |
-
-## 运行分析
-
-```powershell
-# 注意力权重分析
-python analyze_attention.py
-
-# 切片稀疏度统计
-python analyze_gate_sparsity.py --dataset-root dataset
+```text
+experiments/results.csv
+experiments/aggregate_results.csv
 ```
 
-## 运行测试
+## 当前优先级
+
+| 优先级 | 工作 | 产出 |
+|---|---|---|
+| P0 | 跑通六分类 `attention_residual` 正式训练 | 假目标判别主结果 |
+| P0 | 跑通五分类 gate spacing / num gates 消融 | 物理仿真有效性证据 |
+| P1 | 筛查军事三维模型并建立 3-5 类小样本集 | 军事目标应用证明 |
+| P1 | 做从零训练 vs 迁移学习对比 | 小样本能力证明 |
+| P2 | 加入噪声、衰减、背景散射、gate dropout | 鲁棒性证明 |
+| P2 | 设计 gate/depth prior 辅助任务 | 创新点升级 |
+| P3 | 接入多模光纤散斑或光学编码模块 | 面向高速光神经网络融合 |
+
+## 环境与运行
+
+在本机如果默认 Python 没有 PyTorch，请切换到安装了 PyTorch 的环境后运行训练。实验室机器可参考交接文档中的解释器路径。
+
+运行测试：
 
 ```powershell
-python -m pytest tests/ -v
+python -m pytest tests -v
 ```
 
-## 这版基线的意义
+快速查看实验脚本参数：
 
-这版基线先回答一个更基础的问题：
+```powershell
+python run_experiments.py --help
+python run_physical_5class_experiments.py --help
+```
 
-**同一物体的多张选通切片是否已经具有足够的分类信息？**
+## 论文叙事建议
 
-如果这一步成立，后续可以进一步研究：
+建议把论文主线写成：
 
-- 如何把这些切片映射到光学输入
-- 如何在多模光纤中进行物理传播
-- 如何利用 speckle 完成后续识别
+```text
+距离选通成像能够在不同门延迟下获得目标的多深度响应图像。本文构建多 gate 仿真数据，并研究这些深度选择性观测对目标识别和二维假目标判别的贡献。通过共享 CNN 编码和 gate-level 融合网络，模型能够在保持判别贡献可解释性的同时完成多类目标识别；进一步通过物理参数消融、假目标建模和小样本军事目标迁移，验证该方法向高速多模光神经网络识别系统融合的可行性。
+```
 
-换句话说，这个基线既是一个更简单的分类模型，也是后续光学神经网络设计的参照组。
+这条叙事能同时体现：
+
+- 物理成像理解能力
+- 数据集构建与筛查能力
+- 神经网络训练与消融实验能力
+- 小样本迁移学习能力
+- 面向光电融合系统的工程扩展能力
