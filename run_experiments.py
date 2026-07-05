@@ -17,7 +17,7 @@ DEFAULT_DATASET_ROOT = BASELINE_ROOT / "dataset"
 DEFAULT_EXPERIMENT_ROOT = BASELINE_ROOT / "experiments"
 DEFAULT_TRAIN_SCRIPT = BASELINE_ROOT / "train.py"
 DEFAULT_CLASSES = ["chair", "desk", "sofa", "bed", "toilet", "image2d"]
-DEFAULT_SEEDS = [42, 123, 2025]
+DEFAULT_SEEDS = [42, 332, 2026]
 
 RESULT_FIELDNAMES = [
     "experiment",
@@ -34,6 +34,15 @@ RESULT_FIELDNAMES = [
     "summary_path",
     "input_mode",
     "single_gate_index",
+    "fusion_mode",
+    "gaussian_noise_std",
+    "poisson_peak",
+    "background_scatter",
+    "background_sigma",
+    "gate_attenuation_index",
+    "gate_attenuation_factor",
+    "gate_dropout_mode",
+    "gate_dropout_index",
     "epochs",
     "batch_size",
     "lr",
@@ -87,6 +96,19 @@ def parse_args(argv: Sequence[str] | None = None) -> tuple[argparse.Namespace, l
     parser.add_argument("--expected-num-slices", type=int, default=3)
     parser.add_argument("--input-mode", choices=["multi", "single-gate", "single-gate-black"], default="multi")
     parser.add_argument("--single-gate-index", type=int, default=0)
+    parser.add_argument(
+        "--fusion-mode",
+        choices=["attention", "mean", "concat", "attention_residual"],
+        default="attention",
+    )
+    parser.add_argument("--gaussian-noise-std", type=float, default=0.0)
+    parser.add_argument("--poisson-peak", type=float, default=0.0)
+    parser.add_argument("--background-scatter", type=float, default=0.0)
+    parser.add_argument("--background-sigma", type=float, default=24.0)
+    parser.add_argument("--gate-attenuation-index", type=int, default=-1)
+    parser.add_argument("--gate-attenuation-factor", type=float, default=1.0)
+    parser.add_argument("--gate-dropout-mode", choices=["none", "fixed", "random"], default="none")
+    parser.add_argument("--gate-dropout-index", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--lr", type=float, default=3e-4)
@@ -157,6 +179,24 @@ def build_train_command(
         str(args.input_mode),
         "--single-gate-index",
         str(args.single_gate_index),
+        "--fusion-mode",
+        str(args.fusion_mode),
+        "--gaussian-noise-std",
+        str(args.gaussian_noise_std),
+        "--poisson-peak",
+        str(args.poisson_peak),
+        "--background-scatter",
+        str(args.background_scatter),
+        "--background-sigma",
+        str(args.background_sigma),
+        "--gate-attenuation-index",
+        str(args.gate_attenuation_index),
+        "--gate-attenuation-factor",
+        str(args.gate_attenuation_factor),
+        "--gate-dropout-mode",
+        str(args.gate_dropout_mode),
+        "--gate-dropout-index",
+        str(args.gate_dropout_index),
         "--epochs",
         str(args.epochs),
         "--batch-size",
@@ -210,6 +250,15 @@ def make_result_row(
         "summary_path": str(summary_path),
         "input_mode": summary.get("input_mode", args.input_mode),
         "single_gate_index": summary.get("single_gate_index", args.single_gate_index),
+        "fusion_mode": summary.get("fusion_mode", args.fusion_mode),
+        "gaussian_noise_std": summary.get("gaussian_noise_std", args.gaussian_noise_std),
+        "poisson_peak": summary.get("poisson_peak", args.poisson_peak),
+        "background_scatter": summary.get("background_scatter", args.background_scatter),
+        "background_sigma": summary.get("background_sigma", args.background_sigma),
+        "gate_attenuation_index": summary.get("gate_attenuation_index", args.gate_attenuation_index),
+        "gate_attenuation_factor": summary.get("gate_attenuation_factor", args.gate_attenuation_factor),
+        "gate_dropout_mode": summary.get("gate_dropout_mode", args.gate_dropout_mode),
+        "gate_dropout_index": summary.get("gate_dropout_index", args.gate_dropout_index),
         "epochs": summary.get("epochs", args.epochs),
         "batch_size": summary.get("batch_size", args.batch_size),
         "lr": summary.get("lr", args.lr),

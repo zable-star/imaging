@@ -1,0 +1,6 @@
+group,num_samples,mean_attention,mean_black_gate_attention
+all_image2d_active_gate,20,0.17519860193133355,
+all_image2d_black_gates,40,0.41240069419145586,
+image2d_active_gate_0,7,0.17577977904251643,0.41211009877068655
+image2d_active_gate_1,4,0.17503470182418823,0.4124826490879059
+image2d_active_gate_2,9,0.17481941978136697,0.41259028845363194

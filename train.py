@@ -13,7 +13,7 @@ from sklearn.metrics import confusion_matrix
 from torch.utils.data import DataLoader, Dataset, Subset
 
 from dataset import MultiSliceObjectDataset
-from model import SliceAttentionClassifier
+from model import FUSION_MODES, SliceAttentionClassifier
 
 
 ROOT = Path(r"E:\wjz\test1\dataset\dataset_obj")
@@ -23,6 +23,7 @@ ARTIFACT_DIR = BASELINE_ROOT / "artifacts"
 MODEL_PATH = BASELINE_ROOT / "slice_attention_model.pth"
 DEFAULT_CLASSES = ["chair", "desk", "sofa", "bed", "toilet", "image2d"]
 INPUT_MODES = ["multi", "single-gate", "single-gate-black"]
+GATE_DROPOUT_MODES = ["none", "fixed", "random"]
 
 IMAGE_SIZE = 224
 BATCH_SIZE = 8
@@ -46,6 +47,15 @@ def parse_args():
     parser.add_argument("--expected-num-slices", type=int, default=3)
     parser.add_argument("--input-mode", choices=INPUT_MODES, default="multi")
     parser.add_argument("--single-gate-index", type=int, default=0)
+    parser.add_argument("--fusion-mode", choices=FUSION_MODES, default="attention")
+    parser.add_argument("--gaussian-noise-std", type=float, default=0.0)
+    parser.add_argument("--poisson-peak", type=float, default=0.0)
+    parser.add_argument("--background-scatter", type=float, default=0.0)
+    parser.add_argument("--background-sigma", type=float, default=24.0)
+    parser.add_argument("--gate-attenuation-index", type=int, default=-1)
+    parser.add_argument("--gate-attenuation-factor", type=float, default=1.0)
+    parser.add_argument("--gate-dropout-mode", choices=GATE_DROPOUT_MODES, default="none")
+    parser.add_argument("--gate-dropout-index", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=EPOCHS)
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     parser.add_argument("--lr", type=float, default=LR)
@@ -138,6 +148,149 @@ class SliceInputViewDataset(Dataset):
         black_input = torch.zeros_like(x)
         black_input[self.single_gate_index] = x[self.single_gate_index]
         return black_input, y, meta
+
+
+class SliceDegradationDataset(Dataset):
+    """Apply deterministic gated-image degradations for robustness experiments."""
+
+    def __init__(
+        self,
+        dataset: Dataset,
+        seed: int,
+        gaussian_noise_std: float = 0.0,
+        poisson_peak: float = 0.0,
+        background_scatter: float = 0.0,
+        background_sigma: float = 24.0,
+        gate_attenuation_index: int = -1,
+        gate_attenuation_factor: float = 1.0,
+        gate_dropout_mode: str = "none",
+        gate_dropout_index: int = 0,
+    ) -> None:
+        if gate_dropout_mode not in GATE_DROPOUT_MODES:
+            raise ValueError(f"Unsupported gate_dropout_mode: {gate_dropout_mode}")
+        if gaussian_noise_std < 0.0:
+            raise ValueError("gaussian_noise_std must be non-negative")
+        if poisson_peak < 0.0:
+            raise ValueError("poisson_peak must be non-negative")
+        if background_scatter < 0.0:
+            raise ValueError("background_scatter must be non-negative")
+        if background_sigma <= 0.0:
+            raise ValueError("background_sigma must be positive")
+        if not 0.0 <= gate_attenuation_factor <= 1.0:
+            raise ValueError("gate_attenuation_factor must be in [0, 1]")
+
+        self.dataset = dataset
+        self.seed = seed
+        self.gaussian_noise_std = gaussian_noise_std
+        self.poisson_peak = poisson_peak
+        self.background_scatter = background_scatter
+        self.background_sigma = background_sigma
+        self.gate_attenuation_index = gate_attenuation_index
+        self.gate_attenuation_factor = gate_attenuation_factor
+        self.gate_dropout_mode = gate_dropout_mode
+        self.gate_dropout_index = gate_dropout_index
+        self.samples = dataset.samples
+        self.class_names = dataset.class_names
+        self.num_slices = dataset.num_slices
+        self.effective_num_input_slices = dataset.effective_num_input_slices
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, index: int):
+        x, y, meta = self.dataset[index]
+        meta = dict(meta)
+        enabled = self._enabled()
+        if enabled:
+            x = self.apply_degradation(x, index)
+        meta.update(self.degradation_meta(index, x.shape[0], enabled))
+        return x, y, meta
+
+    def _enabled(self) -> bool:
+        return any(
+            [
+                self.gaussian_noise_std > 0.0,
+                self.poisson_peak > 0.0,
+                self.background_scatter > 0.0,
+                self.gate_attenuation_index >= 0 and self.gate_attenuation_factor < 1.0,
+                self.gate_dropout_mode != "none",
+            ]
+        )
+
+    def _generator(self, index: int, offset: int = 0) -> torch.Generator:
+        return torch.Generator().manual_seed(self.seed + index * 1009 + offset)
+
+    def degradation_meta(self, index: int, num_slices: int, enabled: bool) -> dict[str, object]:
+        drop_gate = self.resolve_dropout_gate(index, num_slices)
+        return {
+            "degradation_enabled": enabled,
+            "gaussian_noise_std": self.gaussian_noise_std,
+            "poisson_peak": self.poisson_peak,
+            "background_scatter": self.background_scatter,
+            "background_sigma": self.background_sigma,
+            "gate_attenuation_index": self.gate_attenuation_index,
+            "gate_attenuation_factor": self.gate_attenuation_factor,
+            "gate_dropout_mode": self.gate_dropout_mode,
+            "gate_dropout_index": self.gate_dropout_index,
+            "resolved_gate_dropout_index": drop_gate,
+        }
+
+    def resolve_dropout_gate(self, index: int, num_slices: int) -> int:
+        if self.gate_dropout_mode == "none":
+            return -1
+        if self.gate_dropout_mode == "fixed":
+            return self.gate_dropout_index % num_slices
+        generator = self._generator(index, offset=17)
+        return int(torch.randint(0, num_slices, (1,), generator=generator).item())
+
+    def apply_degradation(self, x: torch.Tensor, index: int) -> torch.Tensor:
+        out = x.clone()
+        num_slices = out.shape[0]
+
+        if 0 <= self.gate_attenuation_index < num_slices and self.gate_attenuation_factor < 1.0:
+            out[self.gate_attenuation_index] *= self.gate_attenuation_factor
+
+        drop_gate = self.resolve_dropout_gate(index, num_slices)
+        if drop_gate >= 0:
+            out[drop_gate] = 0.0
+
+        if self.background_scatter > 0.0:
+            out = out + self._background_like(out, index) * self.background_scatter
+
+        if self.poisson_peak > 0.0:
+            scaled = torch.clamp(out, 0.0, 1.0) * self.poisson_peak
+            sampled = torch.poisson(scaled, generator=self._generator(index, offset=31))
+            out = sampled / self.poisson_peak
+
+        if self.gaussian_noise_std > 0.0:
+            noise = torch.randn(
+                out.shape,
+                generator=self._generator(index, offset=47),
+                dtype=out.dtype,
+                device=out.device,
+            )
+            out = out + noise * self.gaussian_noise_std
+
+        return torch.clamp(out, 0.0, 1.0)
+
+    def _background_like(self, reference: torch.Tensor, index: int) -> torch.Tensor:
+        noise = torch.rand(
+            reference.shape,
+            generator=self._generator(index, offset=61),
+            dtype=reference.dtype,
+            device=reference.device,
+        )
+        kernel_size = max(3, int(round(self.background_sigma)))
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+        pad = kernel_size // 2
+        pooled = torch.nn.functional.avg_pool2d(
+            noise.reshape(-1, 1, noise.shape[-2], noise.shape[-1]),
+            kernel_size=kernel_size,
+            stride=1,
+            padding=pad,
+        )
+        return pooled.reshape_as(reference)
 
 
 def stratified_split(dataset: MultiSliceObjectDataset, val_ratio: float, seed: int) -> tuple[Subset, Subset]:
@@ -256,6 +409,21 @@ def evaluate(model, loader, criterion, device):
                 "pred": int(pred.item()),
                 "gt": int(gt.item()),
             }
+            for key in (
+                "input_mode",
+                "single_gate_index",
+                "degradation_enabled",
+                "gaussian_noise_std",
+                "poisson_peak",
+                "background_scatter",
+                "background_sigma",
+                "gate_attenuation_index",
+                "gate_attenuation_factor",
+                "gate_dropout_mode",
+                "resolved_gate_dropout_index",
+            ):
+                if key in meta:
+                    row[key] = meta[key]
             for idx, value in enumerate(attn.tolist()):
                 row[f"attn_gate_{idx}"] = float(value)
             for idx, value in enumerate(prob.tolist()):
@@ -333,6 +501,18 @@ def main():
         expected_num_slices=args.expected_num_slices,
     )
     dataset = SliceInputViewDataset(base_dataset, args.input_mode, args.single_gate_index)
+    dataset = SliceDegradationDataset(
+        dataset,
+        seed=args.seed,
+        gaussian_noise_std=args.gaussian_noise_std,
+        poisson_peak=args.poisson_peak,
+        background_scatter=args.background_scatter,
+        background_sigma=args.background_sigma,
+        gate_attenuation_index=args.gate_attenuation_index,
+        gate_attenuation_factor=args.gate_attenuation_factor,
+        gate_dropout_mode=args.gate_dropout_mode,
+        gate_dropout_index=args.gate_dropout_index,
+    )
 
     train_set, val_set = stratified_split(dataset, args.val_ratio, args.seed)
 
@@ -354,7 +534,11 @@ def main():
         pin_memory=device.type == "cuda",
     )
 
-    model = SliceAttentionClassifier(num_classes=len(dataset.class_names)).to(device)
+    model = SliceAttentionClassifier(
+        num_classes=len(dataset.class_names),
+        fusion_mode=args.fusion_mode,
+        num_slices=dataset.effective_num_input_slices,
+    ).to(device)
     # label smoothing 能降低模型在小数据集上的过度自信。
     train_criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
     # 验证集 loss 不使用 smoothing，这样数值仍然对应标准交叉熵。
@@ -430,6 +614,15 @@ def main():
         "classes": dataset.class_names,
         "input_mode": args.input_mode,
         "single_gate_index": args.single_gate_index,
+        "fusion_mode": args.fusion_mode,
+        "gaussian_noise_std": args.gaussian_noise_std,
+        "poisson_peak": args.poisson_peak,
+        "background_scatter": args.background_scatter,
+        "background_sigma": args.background_sigma,
+        "gate_attenuation_index": args.gate_attenuation_index,
+        "gate_attenuation_factor": args.gate_attenuation_factor,
+        "gate_dropout_mode": args.gate_dropout_mode,
+        "gate_dropout_index": args.gate_dropout_index,
         "best_val_acc": best_acc,
         "seed": args.seed,
         "epochs": args.epochs,

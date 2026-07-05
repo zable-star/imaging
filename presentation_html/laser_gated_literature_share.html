@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>激光选通文献分享</title>
+  <style>
+    :root {
+      --ink: #17202a;
+      --muted: #627082;
+      --line: #d8dee6;
+      --paper: #f6f8fb;
+      --white: #ffffff;
+      --teal: #087f8c;
+      --green: #4f8a5b;
+      --blue: #2f5f9f;
+      --gold: #b37b17;
+      --red: #b84a4a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #e8edf3;
+      font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif;
+    }
+
+    .deck {
+      width: 100%;
+    }
+
+    .slide {
+      position: relative;
+      width: 100vw;
+      height: 56.25vw;
+      min-height: 720px;
+      max-height: 100vh;
+      aspect-ratio: 16 / 9;
+      margin: 0 auto 22px;
+      padding: 46px 62px 42px;
+      overflow: hidden;
+      background: var(--paper);
+      border-bottom: 1px solid #ccd4de;
+    }
+
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(8,127,140,.075), transparent 34%),
+        linear-gradient(180deg, rgba(47,95,159,.08), transparent 28%);
+      pointer-events: none;
+    }
+
+    .slide > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .kicker {
+      margin-bottom: 10px;
+      color: var(--teal);
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    h1, h2 {
+      margin: 0;
+      letter-spacing: 0;
+      line-height: 1.12;
+    }
+
+    h1 {
+      max-width: 980px;
+      font-size: 54px;
+      font-weight: 800;
+    }
+
+    h2 {
+      font-size: 38px;
+      font-weight: 800;
+    }
+
+    h3 {
+      margin: 0 0 12px;
+      font-size: 22px;
+      line-height: 1.25;
+    }
+
+    p {
+      margin: 0;
+      line-height: 1.55;
+    }
+
+    .subtitle {
+      max-width: 920px;
+      margin-top: 22px;
+      color: #34495e;
+      font-size: 24px;
+      line-height: 1.45;
+    }
+
+    .meta {
+      position: absolute;
+      left: 62px;
+      bottom: 42px;
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .meta span {
+      padding-left: 16px;
+      border-left: 4px solid var(--teal);
+    }
+
+    .slide-no {
+      position: absolute;
+      right: 46px;
+      bottom: 34px;
+      color: #8a96a6;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1.03fr .97fr;
+      gap: 34px;
+      height: calc(100% - 82px);
+      margin-top: 26px;
+      align-items: stretch;
+    }
+
+    .two-col.wide-left {
+      grid-template-columns: 1.22fr .78fr;
+    }
+
+    .two-col.wide-right {
+      grid-template-columns: .86fr 1.14fr;
+    }
+
+    .panel {
+      background: rgba(255,255,255,.82);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 24px 26px;
+      box-shadow: 0 12px 26px rgba(45, 67, 88, .08);
+    }
+
+    .panel.no-card {
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+      padding: 0;
+    }
+
+    .bullets {
+      display: grid;
+      gap: 13px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      font-size: 21px;
+      line-height: 1.42;
+    }
+
+    .bullets li {
+      position: relative;
+      padding-left: 22px;
+    }
+
+    .bullets li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: .62em;
+      width: 8px;
+      height: 8px;
+      background: var(--teal);
+      border-radius: 50%;
+    }
+
+    .figure {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 0;
+    }
+
+    .figure img {
+      width: 100%;
+      max-height: 470px;
+      object-fit: contain;
+      background: #fff;
+      border: 1px solid #cfd7e2;
+      border-radius: 6px;
+    }
+
+    .figure.tall img {
+      max-height: 545px;
+    }
+
+    .caption {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 24px;
+    }
+
+    .tag {
+      padding: 7px 12px;
+      border-radius: 5px;
+      color: #17303c;
+      background: #dceef1;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-top: 34px;
+    }
+
+    .flow .step {
+      min-height: 150px;
+      padding: 20px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .step strong {
+      display: block;
+      margin-bottom: 10px;
+      color: var(--blue);
+      font-size: 22px;
+    }
+
+    .step p {
+      color: #415064;
+      font-size: 18px;
+    }
+
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 22px;
+    }
+
+    .metric {
+      padding: 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .metric .num {
+      color: var(--red);
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .metric .label {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.35;
+    }
+
+    .compare {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .compare-box {
+      min-height: 240px;
+      padding: 20px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .compare-box h3 {
+      color: var(--blue);
+    }
+
+    .gate-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .gate {
+      height: 92px;
+      border: 1px solid #bfc8d4;
+      border-radius: 6px;
+      background:
+        linear-gradient(135deg, rgba(8,127,140,.24), rgba(47,95,159,.06)),
+        repeating-linear-gradient(45deg, transparent 0 10px, rgba(23,32,42,.04) 10px 20px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #223244;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .gate.dim1 { opacity: .62; }
+    .gate.dim2 { opacity: .28; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      margin-top: 26px;
+    }
+
+    .summary-item {
+      min-height: 330px;
+      padding: 24px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .summary-item .idx {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 18px;
+      color: #fff;
+      background: var(--teal);
+      border-radius: 50%;
+      font-weight: 800;
+    }
+
+    .summary-item p {
+      color: #3d4b5d;
+      font-size: 18px;
+    }
+
+    .takeaway {
+      margin-top: 20px;
+      padding: 16px 18px;
+      border-left: 5px solid var(--gold);
+      background: rgba(255,255,255,.78);
+      color: #2d3b4d;
+      font-size: 20px;
+      line-height: 1.45;
+      font-weight: 700;
+    }
+
+    .footer-source {
+      position: absolute;
+      left: 62px;
+      bottom: 35px;
+      max-width: 980px;
+      color: #7c8897;
+      font-size: 13px;
+    }
+
+    .title-slide {
+      background:
+        linear-gradient(120deg, rgba(255,255,255,.92), rgba(246,248,251,.85)),
+        url("assets/paper2_fig1.jpg") center / cover no-repeat;
+    }
+
+    .title-slide::before {
+      background: rgba(246,248,251,.78);
+    }
+
+    .title-block {
+      max-width: 1000px;
+      margin-top: 74px;
+    }
+
+    .small-note {
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.45;
+    }
+
+    .nav-hint {
+      position: fixed;
+      right: 18px;
+      top: 16px;
+      z-index: 10;
+      padding: 8px 10px;
+      color: #fff;
+      background: rgba(23,32,42,.68);
+      border-radius: 5px;
+      font-size: 13px;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+      .slide {
+        width: 297mm;
+        height: 167.06mm;
+        min-height: 0;
+        max-height: none;
+        margin: 0;
+        page-break-after: always;
+      }
+      .nav-hint {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="nav-hint">全屏后用 PageDown / 空格翻页</div>
+  <main class="deck">
+    <section class="slide title-slide">
+      <div class="title-block">
+        <div class="kicker">Literature Share</div>
+        <h1>基于激光选通图像序列的真假目标识别</h1>
+        <p class="subtitle">从物理回波建模、三门深度先验到自适应感知融合</p>
+        <div class="tag-row">
+          <span class="tag">Laser gated imaging</span>
+          <span class="tag">3D range-gated imaging</span>
+          <span class="tag">Depth prior</span>
+          <span class="tag">Gate attention</span>
+        </div>
+      </div>
+      <div class="meta">
+        <span>文献1 + 文献4 + 文献2</span>
+        <span>汇报主线：物理机制 → 深度先验 → 感知融合</span>
+      </div>
+      <div class="slide-no">01 / 08</div>
+    </section>
+
+    <section class="slide">
+      <div class="kicker">Motivation</div>
+      <h2>研究问题：从可采集回波中识别真假目标</h2>
+      <div class="flow">
+        <div class="step">
+          <strong>普通 2D 图像</strong>
+          <p>主要提供外观纹理，面对平面假目标时容易被完整轮廓和贴图迷惑。</p>
+        </div>
+        <div class="step">
+          <strong>激光选通图像</strong>
+          <p>不同 gate 对应不同距离响应，图像强度中隐含目标的深度结构。</p>
+        </div>
+        <div class="step">
+          <strong>真假目标识别</strong>
+          <p>真 3D 目标呈现深度相关结构变化，平面假目标主要表现为整体回波衰减。</p>
+        </div>
+      </div>
+      <div class="compare">
+        <div class="compare-box">
+          <h3>真 3D 目标</h3>
+          <p class="small-note">不同部位处于不同深度，三个选通门中目标结构和亮度分布会发生空间变化。</p>
+          <div class="gate-strip">
+            <div class="gate">Gate 1</div>
+            <div class="gate">Gate 2</div>
+            <div class="gate">Gate 3</div>
+          </div>
+        </div>
+        <div class="compare-box">
+          <h3>平面假目标</h3>
+          <p class="small-note">整个反射图位于近似同一深度，多个 gate 中应保持完整轮廓，主要亮度逐渐变弱。</p>
+          <div class="gate-strip">
+            <div class="gate">Full</div>
+            <div class="gate dim1">Full</div>
+            <div class="gate dim2">Full</div>
+          </div>
+        </div>
+      </div>
+      <div class="takeaway">核心：不是直接使用理想深度图，而是利用可实际采集的 gated intensity stack。</div>
+      <div class="slide-no">02 / 08</div>
+    </section>
+
+    <section class="slide">
+      <div class="kicker">Paper 1</div>
+      <h2>选通成像的物理基础：强度关系中包含距离信息</h2>
+      <div class="two-col wide-left">
+        <div class="figure tall">
+          <img src="assets/paper1_fig1.jpg" alt="Paper 1 Fig. 1" />
+          <div class="caption">Source: Fig. 1, Range precision prediction model for three-dimensional laser gated range-intensity correlation imaging.</div>
+        </div>
+        <div class="panel">
+          <h3>这篇文献解决什么问题？</h3>
+          <ul class="bullets">
+            <li>分析 laser range-gated imaging 的时空模型。</li>
+            <li>解释 GRICI 如何由至少两张 gated images 通过强度关系恢复距离。</li>
+            <li>说明 gate 图像不是普通照片，而是带距离选择性的回波采样。</li>
+          </ul>
+          <div class="takeaway">对我的课题：真 3D 目标在不同 gate 中应呈现不同深度部位的响应。</div>
+        </div>
+      </div>
+      <div class="slide-no">03 / 08</div>
+    </section>
+
+    <section class="slide">
+      <div class="kicker">Paper 1</div>
+      <h2>距离精度受噪声、抖动和衰减共同限制</h2>
+      <div class="two-col">
+        <div class="panel">
+          <h3>关键结论</h3>
+          <ul class="bullets">
+            <li>传统模型常忽略光电转换、shot noise、temporal jitter、距离衰减和后向散射。</li>
+            <li>新模型在 13.45 m 处相对误差为 3.1%，传统模型为 76.9%。</li>
+            <li>实验中两目标距离差约达到 7 cm 才可分辨。</li>
+          </ul>
+          <div class="metric-row">
+            <div class="metric">
+              <div class="num">3.1%</div>
+              <div class="label">proposed model relative error</div>
+            </div>
+            <div class="metric">
+              <div class="num">76.9%</div>
+              <div class="label">traditional model relative error</div>
+            </div>
+            <div class="metric">
+              <div class="num">7 cm</div>
+              <div class="label">separable range difference</div>
+            </div>
+          </div>
+        </div>
+        <div class="figure">
+          <img src="assets/paper1_fig5c.jpg" alt="Paper 1 Fig. 5c" />
+          <div class="caption">Source: Fig. 5c, model prediction versus experiment.</div>
+          <div class="takeaway">仿真启发：Blender 数据集应加入门函数、距离衰减、噪声、gate overlap，而不是理想硬切片。</div>
+        </div>
+      </div>
+      <div class="slide-no">04 / 08</div>
+    </section>
+
+    <section class="slide">
+      <div class="kicker">Paper 4</div>
+      <h2>三张 gated images 可以被网络转化为深度估计</h2>
+      <div class="two-col wide-right">
+        <div class="panel">
+          <h3>方法主线</h3>
+          <ul class="bullets">
+            <li>输入：三张 gated images，只改变 laser pulse 与 gate pulse 的延时。</li>
+            <li>三个 gate 捕获不同但重叠的距离范围。</li>
+            <li>骨干网络改自 AdaBins，并引入 refined optical depth prior 与 depth perception prior。</li>
+          </ul>
+          <div class="takeaway">它直接证明：gate stack 中包含可学习的深度线索。</div>
+        </div>
+        <div class="figure tall">
+          <img src="assets/paper4_fig1.jpg" alt="Paper 4 Fig. 1" />
+          <div class="caption">Source: Fig. 1, Transformer-based 3D range-gated imaging method with multiple depth priors.</div>
+        </div>
+      </div>
+      <div class="slide-no">05 / 08</div>
+    </section>
+
+    <section class="slide">
+      <div class="kicker">Paper 4</div>
+      <h2>光学深度先验：从三门强度关系得到近/中/远区域</h2>
+      <div class="two-col wide-left">
+        <div class="figure">
+          <img src="assets/paper4_fig3.jpg" alt="Paper 4 Fig. 3" />
+          <div class="caption">Source: Fig. 3, refined optical depth-prior from range-gated imaging.</div>
+          <img style="margin-top:12px; max-height:190px;" src="assets/paper4_fig4.jpg" alt="Paper 4 Fig. 4" />
+          <div class="caption">Source: Fig. 4, multipath noise and prior refinement.</div>
+        </div>
+        <div class="panel">
+          <h3>对网络设计的启发</h3>
+          <ul class="bullets">
+            <li>根据三个 gate 的像素强度最大值，可得到近/中/远 depth zones。</li>
+            <li>需要处理 multipath effect 等物理噪声，否则先验会出错。</li>
+            <li>论文将光学先验作为监督和损失权重，提升深度估计。</li>
+            <li>恶劣天气下相较 Gated2Depth，RMSE 改善约 45%-60%。</li>
+          </ul>
+          <div class="takeaway">对我的课题：可以把 gate 间强度关系作为真假识别的深度响应线索。</div>
+        </div>
+      </div>
+      <div class="slide-no">06 / 08</div>
+    </section>
+
+    <section class="slide">
+      <div class="kicker">Paper 2</div>
+      <h2>gated camera 在真实感知任务中具有补充价值</h2>
+      <div class="two-col wide-left">
+        <div class="figure tall">
+          <img src="assets/paper2_fig2.jpg" alt="Paper 2 Fig. 2" />
+          <div class="caption">Source: Fig. 2, SAMFusion architecture.</div>
+        </div>
+        <div class="panel">
+          <h3>SAMFusion 的核心思想</h3>
+          <ul class="bullets">
+            <li>融合 RGB、gated NIR、LiDAR、radar。</li>
+            <li>在 BEV 空间中结合图像特征与距离传感器特征。</li>
+            <li>根据距离、天气和可见性自适应加权不同模态。</li>
+          </ul>
+          <div class="metric-row">
+            <div class="metric">
+              <div class="num">17.2 AP</div>
+              <div class="label">dense fog pedestrian gain</div>
+            </div>
+            <div class="metric">
+              <div class="num">15.62 AP</div>
+              <div class="label">heavy snow pedestrian gain</div>
+            </div>
+            <div class="metric">
+              <div class="num">50-80 m</div>
+              <div class="label">long-range focus</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="slide-no">07 / 08</div>
+    </section>
+
+    <section class="slide">
+      <div class="kicker">Synthesis</div>
+      <h2>三篇文献共同支撑我的研究设计</h2>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <div class="idx">1</div>
+          <h3>文献1：物理回波建模</h3>
+          <p>说明 gated echo 的形成过程和精度限制，提醒仿真必须考虑噪声、抖动、衰减和散射。</p>
+        </div>
+        <div class="summary-item">
+          <div class="idx">2</div>
+          <h3>文献4：深度先验学习</h3>
+          <p>证明三张 gated images 可以形成 optical depth prior，并被 Transformer 类网络有效利用。</p>
+        </div>
+        <div class="summary-item">
+          <div class="idx">3</div>
+          <h3>文献2：自适应融合</h3>
+          <p>展示 gated camera 在复杂感知场景中的价值，并启发 gate-adaptive fusion / attention。</p>
+        </div>
+      </div>
+      <div class="takeaway">
+        我的研究落点：构建真 3D 目标和平面假目标的 gate stack 数据，利用不同选通门中的深度响应差异，实现真假目标识别。
+      </div>
+      <div class="footer-source">建议汇报收束语：激光选通的价值不是直接获得完美深度图，而是从可采集的多门回波强度中学习目标的真实三维结构。</div>
+      <div class="slide-no">08 / 08</div>
+    </section>
+  </main>
+  <script>
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    let current = 0;
+
+    function go(delta) {
+      current = Math.max(0, Math.min(slides.length - 1, current + delta));
+      slides[current].scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    window.addEventListener("keydown", (event) => {
+      if (["ArrowRight", "ArrowDown", "PageDown", " "].includes(event.key)) {
+        event.preventDefault();
+        go(1);
+      }
+      if (["ArrowLeft", "ArrowUp", "PageUp"].includes(event.key)) {
+        event.preventDefault();
+        go(-1);
+      }
+      if (event.key === "Home") {
+        current = 0;
+        slides[current].scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      if (event.key === "End") {
+        current = slides.length - 1;
+        slides[current].scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  </script>
+</body>
+</html>

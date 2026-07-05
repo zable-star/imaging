@@ -1,0 +1,2 @@
+experiment,num_runs,mean_best_val_acc,std_best_val_acc,min_best_val_acc,max_best_val_acc,seeds
+six_class_attention_residual,3,0.9666666666666667,0.008333333333333304,0.9583333333333334,0.975,42 123 2025

@@ -1,0 +1,31 @@
+{
+  "num_samples": 600,
+  "num_slices_per_object": 3,
+  "effective_num_input_slices": 3,
+  "classes": [
+    "chair",
+    "desk",
+    "sofa",
+    "bed",
+    "toilet",
+    "image2d"
+  ],
+  "input_mode": "single-gate-black",
+  "single_gate_index": 1,
+  "fusion_mode": "attention",
+  "best_val_acc": 0.775,
+  "seed": 332,
+  "epochs": 30,
+  "batch_size": 8,
+  "val_ratio": 0.2,
+  "expected_num_slices": 3,
+  "lr": 0.0003,
+  "min_lr": 1e-05,
+  "weight_decay": 0.0001,
+  "label_smoothing": 0.05,
+  "grad_clip": 1.0,
+  "ema_alpha": 0.35,
+  "dataset_root": "D:\\学生文件夹\\王剑哲\\slice_attention_baseline\\dataset",
+  "artifact_dir": "D:\\学生文件夹\\王剑哲\\slice_attention_baseline\\experiments\\single_gate_black_g1\\single_gate_black_g1_seed332",
+  "model_path": "D:\\学生文件夹\\王剑哲\\slice_attention_baseline\\experiments\\single_gate_black_g1\\single_gate_black_g1_seed332\\slice_attention_model.pth"
+}

@@ -1,2 +1,0 @@
-experiment,seed,status,best_val_acc,num_samples,num_slices_per_object,classes,dataset_root,artifact_dir,model_path,summary_path,epochs,batch_size,lr,min_lr,weight_decay,label_smoothing,grad_clip,ema_alpha,val_ratio,expected_num_slices
-smoke,42,ok,0.27,500,3,chair desk sofa bed toilet,E:\wjz\test1\dataset\dataset_obj\slice_attention_baseline\dataset,experiments_smoke\smoke_seed42,experiments_smoke\smoke_seed42\slice_attention_model.pth,experiments_smoke\smoke_seed42\summary.json,1,8,0.0003,1e-05,0.0001,0.05,1.0,0.35,0.2,3

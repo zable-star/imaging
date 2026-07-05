@@ -52,6 +52,14 @@ def test_build_train_command_passes_run_specific_outputs(tmp_path: Path) -> None
             "single-gate-black",
             "--single-gate-index",
             "2",
+            "--fusion-mode",
+            "mean",
+            "--gaussian-noise-std",
+            "0.05",
+            "--gate-dropout-mode",
+            "fixed",
+            "--gate-dropout-index",
+            "1",
             "--epochs",
             "2",
             "--",
@@ -73,6 +81,14 @@ def test_build_train_command_passes_run_specific_outputs(tmp_path: Path) -> None
     assert command[command.index("--input-mode") + 1] == "single-gate-black"
     assert "--single-gate-index" in command
     assert command[command.index("--single-gate-index") + 1] == "2"
+    assert "--fusion-mode" in command
+    assert command[command.index("--fusion-mode") + 1] == "mean"
+    assert "--gaussian-noise-std" in command
+    assert command[command.index("--gaussian-noise-std") + 1] == "0.05"
+    assert "--gate-dropout-mode" in command
+    assert command[command.index("--gate-dropout-mode") + 1] == "fixed"
+    assert "--gate-dropout-index" in command
+    assert command[command.index("--gate-dropout-index") + 1] == "1"
     assert command[-2:] == ["--some-future-train-flag", "value"]
 
 

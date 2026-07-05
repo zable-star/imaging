@@ -1,0 +1,2 @@
+experiment,num_runs,mean_best_val_acc,std_best_val_acc,min_best_val_acc,max_best_val_acc,seeds
+single_gate_black_g0,3,0.8138888888888889,0.05912165737164657,0.75,0.8666666666666667,42 332 2026

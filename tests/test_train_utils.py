@@ -2,7 +2,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from train import SliceInputViewDataset, ema, stratified_split
+from train import SliceDegradationDataset, SliceInputViewDataset, ema, stratified_split
 
 
 class DummySample:
@@ -27,9 +27,9 @@ class DummySliceDataset:
     def __getitem__(self, index: int):
         x = torch.stack(
             [
-                torch.full((1, 2, 2), 1.0),
-                torch.full((1, 2, 2), 2.0),
-                torch.full((1, 2, 2), 3.0),
+                torch.full((1, 2, 2), 0.25),
+                torch.full((1, 2, 2), 0.50),
+                torch.full((1, 2, 2), 0.75),
             ]
         )
         return x, 0, {"sample_id": "sample_0", "class_name": "chair"}
@@ -75,7 +75,7 @@ def test_slice_input_view_dataset_can_return_single_2d_gate() -> None:
     x, label, meta = dataset[0]
 
     assert x.shape == (1, 1, 2, 2)
-    assert torch.all(x == 2.0)
+    assert torch.all(x == 0.50)
     assert label == 0
     assert meta["input_mode"] == "single-gate"
     assert meta["single_gate_index"] == 1
@@ -89,10 +89,46 @@ def test_slice_input_view_dataset_can_black_out_other_gates() -> None:
     assert x.shape == (3, 1, 2, 2)
     assert torch.all(x[0] == 0.0)
     assert torch.all(x[1] == 0.0)
-    assert torch.all(x[2] == 3.0)
+    assert torch.all(x[2] == 0.75)
     assert meta["input_mode"] == "single-gate-black"
 
 
 def test_slice_input_view_dataset_rejects_invalid_gate_index() -> None:
     with pytest.raises(ValueError, match="single_gate_index"):
         SliceInputViewDataset(DummySliceDataset(), input_mode="single-gate", single_gate_index=3)
+
+
+def test_slice_degradation_dataset_applies_fixed_gate_dropout() -> None:
+    base = SliceInputViewDataset(DummySliceDataset(), input_mode="multi", single_gate_index=0)
+    dataset = SliceDegradationDataset(base, seed=5, gate_dropout_mode="fixed", gate_dropout_index=1)
+
+    x, _, meta = dataset[0]
+
+    assert torch.all(x[0] == 0.25)
+    assert torch.all(x[1] == 0.0)
+    assert torch.all(x[2] == 0.75)
+    assert meta["degradation_enabled"] is True
+    assert meta["resolved_gate_dropout_index"] == 1
+
+
+def test_slice_degradation_dataset_records_clean_condition() -> None:
+    base = SliceInputViewDataset(DummySliceDataset(), input_mode="multi", single_gate_index=0)
+    dataset = SliceDegradationDataset(base, seed=5)
+
+    x, _, meta = dataset[0]
+
+    assert torch.all(x[0] == 0.25)
+    assert torch.all(x[1] == 0.50)
+    assert torch.all(x[2] == 0.75)
+    assert meta["degradation_enabled"] is False
+    assert meta["resolved_gate_dropout_index"] == -1
+
+
+def test_slice_degradation_dataset_is_deterministic_for_noise() -> None:
+    base = SliceInputViewDataset(DummySliceDataset(), input_mode="multi", single_gate_index=0)
+    dataset = SliceDegradationDataset(base, seed=5, gaussian_noise_std=0.1, background_scatter=0.05)
+
+    x1, _, _ = dataset[0]
+    x2, _, _ = dataset[0]
+
+    torch.testing.assert_close(x1, x2)

@@ -21,3 +21,7 @@ origindataset/
 obj_dataset/
 dataset/
 dataset_gate_tests/
+dataset_gate_spacing_*/
+dataset_new/Military_3D_Dataset/
+dataset_new/slice_test*/
+dataset_new/truck_*/
