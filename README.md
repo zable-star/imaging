@@ -179,6 +179,135 @@ python run_physical_5class_experiments.py -- --experiment-name phys_gate_spacing
 4. 与从零训练对比。
 5. 报告准确率、混淆矩阵、类别间混淆原因和 gate-level attention。
 
+从零训练示例：
+
+```powershell
+python run_military_transfer_experiments.py --classes tank aircraft military_vehicle -- --experiment-name military_scratch_attention_residual --dataset-root dataset_new\Military_3D_Dataset --fusion-mode attention_residual --seeds 42 332 2026 --epochs 30 --batch-size 8
+```
+
+冻结 encoder 迁移示例：
+
+```powershell
+python run_military_transfer_experiments.py --classes tank aircraft military_vehicle -- --experiment-name military_transfer_frozen_encoder --dataset-root dataset_new\Military_3D_Dataset --fusion-mode attention_residual --pretrained-model-path experiments\six_class_attention_residual_seedmatched\six_class_attention_residual_seed42\slice_attention_model.pth --freeze-encoder --seeds 42 332 2026 --epochs 30 --batch-size 8
+```
+
+半冻结微调示例：
+
+```powershell
+python run_military_transfer_experiments.py --classes tank aircraft military_vehicle -- --experiment-name military_transfer_finetune --dataset-root dataset_new\Military_3D_Dataset --fusion-mode attention_residual --pretrained-model-path experiments\six_class_attention_residual_seedmatched\six_class_attention_residual_seed42\slice_attention_model.pth --seeds 42 332 2026 --epochs 30 --batch-size 8 --lr 0.0001
+```
+
+`train.py` 已支持这些迁移参数：
+
+| 参数 | 作用 |
+|---|---|
+| `--pretrained-model-path` | 加载已有模型权重 |
+| `--pretrained-include-classifier` | 类别数相同且希望复用分类头时开启；军事迁移通常不开 |
+| `--freeze-encoder` | 冻结共享 CNN 编码器，只训练融合层和分类头 |
+| `--freeze-attention` | 冻结 gate attention 打分器 |
+| `--freeze-residual` | 冻结 `attention_residual` 中的 concat residual 投影 |
+
+军事数据必须先使用人工筛选后的 44 个模型，不要直接使用 500 个候选模型。推荐流程：
+
+```powershell
+# 1. 使用人工缩略图审查表，只复制 keep=1 的 44 个模型
+E:\ana\envs\pytorch1\python.exe dataset_new\build_selected_subset.py --review-csv dataset_new\Military_3D_Dataset\_review_sheets\thumbnail_review.csv --output-root dataset_new\Military_3D_Selected44 --expected-count 44
+
+# 2. 将 44 个有效 glb 渲染成 gate stack
+powershell -ExecutionPolicy Bypass -File scripts\render_selected_military_gates.ps1
+
+# 3. 检查渲染结果是否可训练
+E:\ana\envs\pytorch1\python.exe dataset_new\check_gate_dataset_ready.py --root dataset_new\Military_3D_Gated_Selected44 --expected-num-slices 3
+
+# 4. 生成同一批模型的二维平面假目标 gate stack
+powershell -ExecutionPolicy Bypass -File scripts\render_selected_military_gates.ps1 -OutputRoot dataset_new\Military_3D_FlatEcho_Selected44_gain10 -TargetMode flat-echo -FlatTargetGateIndex 0 -FlatMinResponse 0.18 -FlatEchoGain 10
+
+# 5. 合并成 true3d / flat_false 二分类数据集
+E:\ana\envs\pytorch1\python.exe dataset_new\build_true_false_dataset.py --true-root dataset_new\Military_3D_Gated_Selected44 --false-root dataset_new\Military_3D_FlatEcho_Selected44_gain10 --output-root dataset_new\Military_TrueFalse_Selected44_gain10 --expected-num-slices 3 --overwrite
+```
+
+### 任务 E：3090 论文级训练矩阵
+
+当前本机 RTX 3050 Ti Laptop GPU 可以承担日常短/中量训练；实验室 24GB RTX 3090 用于最终长 epoch、多随机种子全矩阵验证。建议采用“本机先推进，本机跑不动或需要最终定稿结果时再上 3090”的策略。
+
+本机优先运行：
+
+```powershell
+# 先检查命令
+powershell -ExecutionPolicy Bypass -File scripts\run_local_paper_experiments.ps1 -DryRun
+
+# 默认跑 main + ablation：主实验和单门消融
+powershell -ExecutionPolicy Bypass -File scripts\run_local_paper_experiments.ps1
+
+# 只做快速 smoke
+powershell -ExecutionPolicy Bypass -File scripts\run_local_paper_experiments.ps1 -Stages smoke
+```
+
+本机默认设置：
+
+```text
+seeds = 42 / 332 / 2026
+batch_size = 8
+num_workers = 0
+AMP = true
+main epochs = 20
+ablation epochs = 10
+```
+
+本机结果会汇总到：
+
+```text
+experiments\localgpu_combined_results.csv
+writing\localgpu_training_report_2026-07-06.md
+```
+
+如果使用实验室 24GB RTX 3090，建议不要只把单个实验 epoch 加长，而是系统补齐论文需要的验证矩阵：
+
+| 实验组 | 目的 |
+|---|---|
+| `core` | 三类军事目标识别、迁移学习和 true/false 主实验 |
+| `ablation` | full gate stack 与 gate_0/gate_1/gate_2 单门输入对比 |
+| `fusion` | `mean / attention / attention_residual / concat` 融合方式对比 |
+| `robustness` | 噪声、背景散射、Poisson 光子噪声、gate dropout、单 gate 衰减 |
+| `controls` | foreground-mean 和 p99 曝光匹配控制，继续压低亮度捷径 |
+
+推荐先做 dry run 检查命令：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_3090_paper_experiments.ps1 -DryRun
+```
+
+确认无误后在 3090 上运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_3090_paper_experiments.ps1
+```
+
+如果时间有限，先跑核心和单门消融：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run_3090_paper_experiments.ps1 -Stages core,ablation
+```
+
+该脚本默认使用：
+
+```text
+Python = E:\ana\envs\pytorch1\python.exe
+seeds = 42 / 332 / 2026 / 730 / 1009
+batch_size = 32
+num_workers = 4
+AMP = true
+```
+
+训练完成后会自动汇总：
+
+```text
+experiments\paper3090_combined_results.csv
+writing\paper3090_training_report_2026-07-06.md
+```
+
+写论文时，3090 结果应该优先替换当前 3 随机种子的初步结果；如果 5 随机种子下结论仍成立，核心说服力会明显强于目前的快速试跑。
+
 ## 主要文件
 
 | 文件/目录 | 作用 |
@@ -188,14 +317,33 @@ python run_physical_5class_experiments.py -- --experiment-name phys_gate_spacing
 | `train.py` | 单次训练入口，保存模型、曲线、混淆矩阵和 attention CSV |
 | `run_experiments.py` | 多随机种子、多设置实验管理 |
 | `run_physical_5class_experiments.py` | 五分类物理消融包装脚本 |
+| `run_military_transfer_experiments.py` | 军事小样本迁移实验包装脚本 |
 | `make_image2d_class.py` | 构建二维假目标/异常类 |
 | `dataset_new/generate.py` | 从 Objaverse 关键词筛选军事 3D 模型候选 |
+| `dataset_new/build_selected_subset.py` | 按人工筛选清单复制军事有效模型，支持 `--expected-count 44` 防误用 |
+| `dataset_new/build_true_false_dataset.py` | 将真实三维与平面假目标 gate stack 合并成 `true3d / flat_false` 二分类训练集 |
+| `dataset_new/check_gate_dataset_ready.py` | 检查数据目录是否已经具备可训练的 `*_gate_*.png` 样本 |
+| `dataset_new/audit_gate_image_quality.py` | 审计 gate 图像亮度、前景像素和低对比样本 |
+| `dataset_new/normalize_gate_dataset.py` | 生成强度归一化 gate 数据集，削弱绝对亮度捷径 |
+| `dataset_new/diagnose_gate_stack.py` | 量化 gate 间相关性、掩膜 IoU 和归一化差分 |
 | `dataset_new/review_dataset.py` | 辅助人工筛查军事模型 |
 | `origindataset/gated_blender_physical.py` | Blender 距离选通渲染脚本 |
 | `scripts/run_truck_gate_renders.ps1` | 单个军事车辆真假目标渲染示例 |
+| `scripts/render_selected_military_gates.ps1` | 将 44 个精选军事模型批量渲染为 gate stack |
+| `scripts/run_truefalse_single_gate_ablation.ps1` | 对军事 true/false 数据做 gate_0/1/2 单 gate 快速消融 |
+| `scripts/run_local_paper_experiments.ps1` | 在本机 RTX 3050 Ti 上运行轻/中量论文推进实验 |
+| `scripts/run_3090_paper_experiments.ps1` | 在 24GB 3090 上运行论文级多种子训练矩阵 |
+| `scripts/collect_paper_experiment_report.py` | 汇总 `paper3090_*` aggregate 结果为 CSV 和 Markdown 报告 |
+| `scripts/summarize_gate_experiment.py` | 从 `val_attention_weights.csv` 汇总 per-class accuracy 与平均 gate attention |
+| `scripts/plot_military_selected44_results.py` | 生成军事 44 模型 PPT/论文用结果图 |
+| `scripts/build_military_selected44_ppt.py` | 生成军事 44 模型汇报 PPTX、讲稿和 gate stack 对照图 |
 | `plot_experiment_results.py` | 汇总实验结果并绘图 |
 | `writing/` | 论文草稿、交接文档、实验解释与项目路线 |
 | `writing/project_roadmap_2026-07-05.md` | 当前训练、创新点提升、军事目标迁移和光神经网络融合路线图 |
+| `writing/daily_progress_2026-07-05.md` | 今日推进记录：成像推导、网络推导、迁移学习接口和已有结果 |
+| `writing/paper_evidence_matrix_military_gated_false_target_2026-07-06.md` | 论文主张、证据、风险表述和结果表矩阵 |
+| `writing/paper_draft_military_gated_false_target_2026-07-06.md` | 基于当前结果形成的中文论文初稿 |
+| `writing/ppt_military_selected44_storyline_2026-07-06.md` | 军事 44 模型汇报页级大纲 |
 | `presentation_html/` | 文献分享 PPT HTML 与讲稿材料 |
 
 ## 输出结果
@@ -217,14 +365,152 @@ experiments/results.csv
 experiments/aggregate_results.csv
 ```
 
+## 当前军事 44 模型结果快照
+
+人工筛选后的军事小样本集来自：
+
+```text
+dataset_new\Military_3D_Dataset\_review_sheets\thumbnail_review.csv
+```
+
+当前 keep=1 共 44 个模型：
+
+| 类别 | 数量 |
+|---|---:|
+| 01_Main_Battle_Tank | 12 |
+| 02_Fighter_Jet | 20 |
+| 03_Attack_Helicopter | 12 |
+
+已生成并检查通过的数据集：
+
+| 数据集 | 样本数 | 用途 |
+|---|---:|---|
+| `dataset_new\Military_3D_Gated_Selected44` | 44 | 真实三维军事目标三分类 |
+| `dataset_new\Military_3D_FlatEcho_Selected44_gain10` | 44 | 同源模型的平面假目标 gate stack |
+| `dataset_new\Military_TrueFalse_Selected44_gain10` | 88 | `true3d / flat_false` 二分类 |
+| `dataset_new\Military_TrueFalse_Selected44_gain10_per_gate_norm` | 88 | 逐 gate 最大值归一化二分类，削弱亮度捷径 |
+| `dataset_new\Military_TrueFalse_Selected44_hard_projection` | 88 | 由真实 3D gate stack 最大投影生成的更难平面假目标 |
+| `dataset_new\Military_TrueFalse_Selected44_hard_rect_overlap` | 88 | hard projection + 矩形激光脉冲/矩形接收门重叠响应，更接近物理选通响应 |
+| `dataset_new\Military_TrueFalse_Selected44_hard_rect_overlap_mean_classgate_matched` | 88 | rectangular-overlap 的 gate 均值曝光匹配控制集 |
+
+关键结果汇总：
+
+| 实验 | mean best val acc | 说明 |
+|---|---:|---|
+| 军事三分类，迁移冻结 encoder | 0.7500 | 3 seed 稳定，std = 0 |
+| 军事三分类，从零训练 | 0.7083 | 最高 0.875，但 std = 0.1443 |
+| true3d / flat_false，原始 gain10 | 1.0000 | 二分类链路跑通 |
+| true3d / flat_false，per-gate 归一化 full stack | 1.0000 | 去掉绝对亮度后仍可稳定区分 |
+| per-gate 归一化 only gate_0 | 0.9630 | 单门仍有信息，但低于 full stack |
+| per-gate 归一化 only gate_1 | 0.9630 | 单门仍有信息，但低于 full stack |
+| per-gate 归一化 only gate_2 | 0.8889 | 第三门单独最弱 |
+| per-gate 归一化随机丢一门 | 0.9074 | gate stack 完整性会影响稳定性 |
+| per-gate 归一化 + 噪声/背景/Poisson | 0.9815 | 对常见成像退化仍较稳 |
+| hard projection full stack | 1.0000 | 更难假目标下三门序列仍稳定可分 |
+| hard projection only gate_0 | 0.5370 | 单张图接近随机 |
+| hard projection only gate_1 | 0.6296 | 单张图明显弱于 full stack |
+| hard projection only gate_2 | 0.5370 | 单张图接近随机 |
+| rectangular-overlap full stack | 1.0000 | 矩形脉冲-门重叠响应下三门序列仍稳定可分 |
+| rectangular-overlap only gate_0 | 0.5000 | 单张图为随机水平 |
+| rectangular-overlap only gate_1 | 0.8704 | 峰值 gate 仍保留部分单帧线索，但低于 full stack |
+| rectangular-overlap only gate_2 | 0.5000 | 单张图为随机水平 |
+| exposure-matched rectangular-overlap full stack | 1.0000 | gate 均值曝光匹配后三门序列仍稳定可分 |
+| exposure-matched rectangular-overlap only gate_0 | 0.5000 | 单张图为随机水平 |
+| exposure-matched rectangular-overlap only gate_1 | 0.7222 | 曝光匹配后明显低于未匹配 gate_1 |
+| exposure-matched rectangular-overlap only gate_2 | 0.5000 | 单张图为随机水平 |
+| foreground-matched rectangular-overlap only gate_1 | 0.7222 | 前景均值匹配后 gate_1 残余仍存在 |
+| p99-matched rectangular-overlap only gate_1 | 0.7222 | 高分位亮度匹配后 gate_1 残余仍存在 |
+
+gate stack 物理诊断结果：
+
+| 数据设置 | 类别 | mean pair corr maxnorm | mean pair mask IoU | mean pair absdiff maxnorm |
+|---|---|---:|---:|---:|
+| per-gate norm | flat_false | 0.9995 | 0.9880 | 0.0055 |
+| per-gate norm | true3d | 0.3244 | 0.3174 | 0.1211 |
+| hard projection | flat_false | 0.9768 | 0.9301 | 0.0062 |
+| hard projection | true3d | 0.3246 | 0.3065 | 0.1210 |
+| rectangular-overlap | flat_false | 0.9731 | 0.4299 | 0.0172 |
+| rectangular-overlap | true3d | 0.3246 | 0.3065 | 0.1210 |
+| rectangular-overlap exposure matched | flat_false | 0.9698 | 0.4274 | 0.0210 |
+| rectangular-overlap exposure matched | true3d | 0.3246 | 0.3065 | 0.1210 |
+
+解释：
+
+```text
+平面假目标的三张 gate 几乎是同一整目标轮廓的强度缩放；
+真实三维目标在不同 gate 中呈现明显结构变化。
+这为“激光选通 gate stack 能区分二维平面诱饵和三维目标”提供了直接的物理证据。
+```
+
+hard projection 版本进一步把单帧捷径压低：
+
+```text
+二维假目标轮廓直接来自真实三维 gate stack 的最大投影；
+单独输入任一 gate 时准确率接近随机，
+但输入完整三门序列时仍达到 1.0。
+```
+
+rectangular-overlap 版本进一步把假目标强度系数改成矩形激光脉冲和矩形接收门的重叠长度：
+
+```text
+gate_0 和 gate_2 单独输入为 0.5；
+gate_1 单独输入仍有 0.8704，说明峰值 gate 有残余单帧线索；
+完整三门 gate stack 仍为 1.0，是当前更物理的主结果。
+```
+
+进一步做 gate 均值曝光匹配后：
+
+```text
+flat_false 与 true3d 的 gate0/1/2 全图均值基本对齐；
+gate_1 单独输入从 0.8704 降到 0.7222；
+完整三门 gate stack 仍为 1.0。
+```
+
+继续对 gate_1 做 foreground mean 和 p99 高分位匹配后，gate_1 单门仍为 0.7222。这说明残余单帧线索不只是全图均值、前景均值或高分位亮度，而更可能来自局部形态、边缘或前景结构差异。
+
+这更适合放在 PPT 或论文中解释“为什么需要激光选通序列，而不是只做普通单张图分类”。
+
+详细总表：
+
+```text
+experiments\military_selected44_results_overview_2026-07-06.csv
+dataset_new\military_true_false_selected44_brightness_summary_2026-07-06.csv
+dataset_new\military_true_false_selected44_hard_rect_overlap_gate_diagnostics_by_class_2026-07-06.csv
+dataset_new\military_true_false_selected44_hard_rect_overlap_mean_classgate_matched_brightness_2026-07-06.csv
+dataset_new\military_true_false_selected44_hard_rect_overlap_mean_classgate_matched_gate_diagnostics_by_class_2026-07-06.csv
+```
+
+PPT 可用图已生成到：
+
+```text
+artifacts\figures\military_selected44_2026-07-06
+```
+
+| 图 | 用途 |
+|---|---|
+| `military_3class_transfer_vs_scratch.png` | 展示军事三分类迁移学习比从零训练更稳定 |
+| `hard_projection_full_stack_vs_single_gate.png` | 展示 hard projection 下 full stack 明显优于单 gate |
+| `hard_rect_overlap_full_stack_vs_single_gate.png` | 展示矩形脉冲-门重叠响应下 full stack 优于单 gate |
+| `hard_rect_overlap_exposure_matched_full_stack_vs_single_gate.png` | 展示曝光匹配后 full stack 仍优于单 gate |
+| `hard_rect_overlap_gate1_residual_controls.png` | 展示 gate_1 残余单帧线索的均值/前景/p99 匹配控制 |
+| `per_gate_norm_robustness.png` | 展示随机丢门、噪声背景退化下的鲁棒性 |
+| `gate_stack_physical_diagnostics.png` | 展示 flat_false 与 true3d 的跨 gate 相关性/IoU 差异 |
+
+可编辑 PPTX 初稿和讲稿：
+
+```text
+presentation_outputs\military_selected44_gated_report_2026-07-06.pptx
+presentation_outputs\military_selected44_gated_report_speaker_notes_2026-07-06.md
+```
+
 ## 当前优先级
 
 | 优先级 | 工作 | 产出 |
 |---|---|---|
-| P0 | 跑通六分类 `attention_residual` 正式训练 | 假目标判别主结果 |
-| P0 | 跑通五分类 gate spacing / num gates 消融 | 物理仿真有效性证据 |
-| P1 | 筛查军事三维模型并建立 3-5 类小样本集 | 军事目标应用证明 |
-| P1 | 做从零训练 vs 迁移学习对比 | 小样本能力证明 |
+| P0 | 继续补强 true/false 假目标难度 | 已完成 rectangular-overlap；下一步加入姿态偏移、曝光匹配和复杂背景 |
+| P0 | 跑通五分类 num gates = 1 / 3 / 5 消融 | 物理仿真有效性证据 |
+| P1 | 剔除低对比军事样本后重跑三分类 | 更稳的军事目标应用证明 |
+| P1 | 做迁移学习更多冻结策略对比 | 小样本能力证明 |
 | P2 | 加入噪声、衰减、背景散射、gate dropout | 鲁棒性证明 |
 | P2 | 设计 gate/depth prior 辅助任务 | 创新点升级 |
 | P3 | 接入多模光纤散斑或光学编码模块 | 面向高速光神经网络融合 |
@@ -244,6 +530,7 @@ python -m pytest tests -v
 ```powershell
 python run_experiments.py --help
 python run_physical_5class_experiments.py --help
+python run_military_transfer_experiments.py --help
 ```
 
 ## 论文叙事建议

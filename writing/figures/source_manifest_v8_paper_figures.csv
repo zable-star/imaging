@@ -1,0 +1,5 @@
+figure,source,note
+fig1_gated_imaging_framework,manuscript method design,framework schematic
+fig2_rectangular_overlap_response,rectangular pulse/gate overlap model,"laser_width=0.45, receiver_gate_width=1.50 for v8 illustration"
+fig3_true3d_flatfalse_gate_examples,dataset_new\Military_TrueFalse_Selected44_blender_refl_overlap_w15_m012_v8,02_Fighter_Jet__02_Fighter_Jet_02_Fighter_Jet_044_95fe1170
+fig4_scalar_shortcut_control,single-gate scalar shortcut diagnostics,raw v8 versus per-gate max-normalized control
