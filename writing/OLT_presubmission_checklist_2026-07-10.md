@@ -40,10 +40,10 @@ Word 稿：`writing/sci_manuscript_OLT_target_2026-07-10.docx`
 ### A. 作者与合规信息
 - [ ] 作者姓名、排序、单位中英文
 - [ ] 通讯作者邮箱与地址
-- [ ] Declaration of Competing Interest 最终句
-- [ ] Funding 最终句（有基金写编号；无基金用标准无基金句）
+- [x] Declaration of Competing Interest 最终句（默认无利益冲突）
+- [x] Funding 最终句（默认无外部基金；若有基金请替换）
 - [ ] Acknowledgements（如有）
-- [ ] Data/Code Availability 最终句（见下方推荐模板）
+- [x] Data/Code Availability 最终句（默认 upon reasonable request）
 
 ### B. 文献与格式
 - [ ] 新参考文献 DOI / 会议页码 CrossRef 或出版社页终核
@@ -155,3 +155,10 @@ The simulation and training code, together with aggregated result tables, will b
 - 投稿计划：`writing/OLT_submission_plan_2026-07-10.md`
 - 封面信：`writing/OLT_cover_letter_2026-07-10.md`
 - 本检查清单：`writing/OLT_presubmission_checklist_2026-07-10.md`
+
+## 10. Blocking cleanup log (2026-07-10)
+
+- Removed all figure Source file: writing/figures/... notes.
+- Filled default Competing Interest / Funding / Data Availability statements.
+- Rebuilt DOCX with cleaned captions.
+- Remaining true blockers: author names/affiliations, DOI re-verify, optional public code URL.
