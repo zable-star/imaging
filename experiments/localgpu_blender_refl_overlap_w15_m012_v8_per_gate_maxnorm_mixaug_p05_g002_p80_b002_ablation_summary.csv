@@ -1,0 +1,13 @@
+input,kind,seed,best_val_acc,best_epoch,degradation_probability,gaussian_noise_std,poisson_peak,background_scatter,artifact_dir
+Full 3-gate stack,full,2026,1.0000,8,0.5,0.02,80.0,0.02,experiments\localgpu_blender_refl_overlap_w15_m012_v8_per_gate_maxnorm_full_mixaug_p05_g002_p80_b002_20ep_seed2026
+Full 3-gate stack,full,332,0.9091,14,0.5,0.02,80.0,0.02,experiments\localgpu_blender_refl_overlap_w15_m012_v8_per_gate_maxnorm_full_mixaug_p05_g002_p80_b002_20ep_seed332
+Full 3-gate stack,full,42,1.0000,13,0.5,0.02,80.0,0.02,experiments\localgpu_blender_refl_overlap_w15_m012_v8_per_gate_maxnorm_full_mixaug_p05_g002_p80_b002_20ep_seed42
+Gate 0 only,gate0,2026,1.0000,13,0.5,0.02,80.0,0.02,experiments\localgpu_blender_refl_overlap_w15_m012_v8_per_gate_maxnorm_gate0_mixaug_p05_g002_p80_b002_20ep_seed2026
+Gate 0 only,gate0,332,0.8182,15,0.5,0.02,80.0,0.02,experiments\localgpu_blender_refl_overlap_w15_m012_v8_per_gate_maxnorm_gate0_mixaug_p05_g002_p80_b002_20ep_seed332
+Gate 0 only,gate0,42,0.9091,15,0.5,0.02,80.0,0.02,experiments\localgpu_blender_refl_overlap_w15_m012_v8_per_gate_maxnorm_gate0_mixaug_p05_g002_p80_b002_20ep_seed42
+Gate 1 only,gate1,2026,0.8182,11,0.5,0.02,80.0,0.02,experiments\localgpu_blender_refl_overlap_w15_m012_v8_per_gate_maxnorm_gate1_mixaug_p05_g002_p80_b002_20ep_seed2026
+Gate 1 only,gate1,332,0.7273,19,0.5,0.02,80.0,0.02,experiments\localgpu_blender_refl_overlap_w15_m012_v8_per_gate_maxnorm_gate1_mixaug_p05_g002_p80_b002_20ep_seed332
+Gate 1 only,gate1,42,0.6364,16,0.5,0.02,80.0,0.02,experiments\localgpu_blender_refl_overlap_w15_m012_v8_per_gate_maxnorm_gate1_mixaug_p05_g002_p80_b002_20ep_seed42
+Gate 2 only,gate2,2026,0.8636,6,0.5,0.02,80.0,0.02,experiments\localgpu_blender_refl_overlap_w15_m012_v8_per_gate_maxnorm_gate2_mixaug_p05_g002_p80_b002_20ep_seed2026
+Gate 2 only,gate2,332,0.8636,17,0.5,0.02,80.0,0.02,experiments\localgpu_blender_refl_overlap_w15_m012_v8_per_gate_maxnorm_gate2_mixaug_p05_g002_p80_b002_20ep_seed332
+Gate 2 only,gate2,42,0.9545,18,0.5,0.02,80.0,0.02,experiments\localgpu_blender_refl_overlap_w15_m012_v8_per_gate_maxnorm_gate2_mixaug_p05_g002_p80_b002_20ep_seed42

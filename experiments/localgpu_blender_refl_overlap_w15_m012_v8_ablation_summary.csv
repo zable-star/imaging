@@ -1,0 +1,5 @@
+input,best_val_acc,best_epoch,seed,epochs,split_group_by_sample_id,use_amp,artifact_dir
+Full 3-gate stack,0.9091,10,42,20,True,False,experiments\localgpu_blender_refl_overlap_w15_m012_v8_full_20ep_seed42
+Gate 0 only,0.6818,7,42,20,True,False,experiments\localgpu_blender_refl_overlap_w15_m012_v8_gate0_20ep_seed42
+Gate 1 only,0.8636,12,42,20,True,False,experiments\localgpu_blender_refl_overlap_w15_m012_v8_gate1_20ep_seed42
+Gate 2 only,0.9545,12,42,20,True,False,experiments\localgpu_blender_refl_overlap_w15_m012_v8_gate2_20ep_seed42

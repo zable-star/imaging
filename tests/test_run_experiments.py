@@ -60,8 +60,26 @@ def test_build_train_command_passes_run_specific_outputs(tmp_path: Path) -> None
             "fixed",
             "--gate-dropout-index",
             "1",
+            "--structured-reflectance-strength",
+            "0.08",
+            "--structured-background-strength",
+            "0.02",
+            "--occlusion-probability",
+            "0.4",
+            "--preserve-input-max",
+            "--pretrained-model-path",
+            str(tmp_path / "pretrained.pth"),
+            "--freeze-encoder",
+            "--freeze-attention",
+            "--split-group-by-sample-id",
             "--epochs",
             "2",
+            "--batch-size",
+            "16",
+            "--num-workers",
+            "4",
+            "--use-amp",
+            "--cudnn-benchmark",
             "--",
             "--some-future-train-flag",
             "value",
@@ -89,6 +107,25 @@ def test_build_train_command_passes_run_specific_outputs(tmp_path: Path) -> None
     assert command[command.index("--gate-dropout-mode") + 1] == "fixed"
     assert "--gate-dropout-index" in command
     assert command[command.index("--gate-dropout-index") + 1] == "1"
+    assert "--structured-reflectance-strength" in command
+    assert command[command.index("--structured-reflectance-strength") + 1] == "0.08"
+    assert "--structured-background-strength" in command
+    assert command[command.index("--structured-background-strength") + 1] == "0.02"
+    assert "--occlusion-probability" in command
+    assert command[command.index("--occlusion-probability") + 1] == "0.4"
+    assert "--preserve-input-max" in command
+    assert "--pretrained-model-path" in command
+    assert command[command.index("--pretrained-model-path") + 1] == str(tmp_path / "pretrained.pth")
+    assert "--freeze-encoder" in command
+    assert "--freeze-attention" in command
+    assert "--freeze-residual" not in command
+    assert "--split-group-by-sample-id" in command
+    assert "--batch-size" in command
+    assert command[command.index("--batch-size") + 1] == "16"
+    assert "--num-workers" in command
+    assert command[command.index("--num-workers") + 1] == "4"
+    assert "--use-amp" in command
+    assert "--cudnn-benchmark" in command
     assert command[-2:] == ["--some-future-train-flag", "value"]
 
 

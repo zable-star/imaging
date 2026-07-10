@@ -1,0 +1,13 @@
+eval_condition,input,num_runs,mean_acc,std_acc,min_acc,max_acc,seeds
+clean,Full 3-gate stack,3,0.9697,0.0525,0.9091,1.0000,42/332/2026
+clean,Gate 0 only,3,0.9091,0.0909,0.8182,1.0000,42/332/2026
+clean,Gate 1 only,3,0.7121,0.0263,0.6818,0.7273,42/332/2026
+clean,Gate 2 only,3,0.8636,0.0455,0.8182,0.9091,42/332/2026
+light_noise_g002_p80_b002,Full 3-gate stack,3,0.9545,0.0455,0.9091,1.0000,42/332/2026
+light_noise_g002_p80_b002,Gate 0 only,3,0.8636,0.1202,0.7273,0.9545,42/332/2026
+light_noise_g002_p80_b002,Gate 1 only,3,0.5151,0.0694,0.4545,0.5909,42/332/2026
+light_noise_g002_p80_b002,Gate 2 only,3,0.7727,0.0909,0.6818,0.8636,42/332/2026
+strong_noise_g005_p30_b005,Full 3-gate stack,3,0.7424,0.1389,0.5909,0.8636,42/332/2026
+strong_noise_g005_p30_b005,Gate 0 only,3,0.6970,0.1144,0.5909,0.8182,42/332/2026
+strong_noise_g005_p30_b005,Gate 1 only,3,0.5152,0.0263,0.5000,0.5455,42/332/2026
+strong_noise_g005_p30_b005,Gate 2 only,3,0.5152,0.0263,0.5000,0.5455,42/332/2026

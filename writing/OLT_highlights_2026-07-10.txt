@@ -1,0 +1,7 @@
+Highlights
+
+- A Blender-based gated-imaging simulator is built for 3D and planar targets.
+- Rectangular pulse-gate overlap models the range-gated echo response.
+- Scalar shortcut diagnostics reveal a strong raw third-gate brightness cue.
+- Domain-randomized training improves structured-nuisance robustness.
+- Full three-gate stacks outperform all single-gate controls after domain mixing.

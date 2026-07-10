@@ -23,7 +23,7 @@ class SliceSample:
 
 def pil_to_tensor_gray(img: Image.Image) -> torch.Tensor:
     img = img.convert("L")
-    data = torch.ByteTensor(torch.ByteStorage.from_buffer(img.tobytes()))
+    data = torch.as_tensor(bytearray(img.tobytes()), dtype=torch.uint8)
     data = data.view(img.size[1], img.size[0]).float() / 255.0
     return data.unsqueeze(0)
 

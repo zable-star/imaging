@@ -33,3 +33,8 @@ The manuscript should be framed as an optical imaging simulation and validation 
 ## Current Recommendation
 
 Proceed with the OLT target version as the main working manuscript. Do not start additional heavy training on the laptop unless a specific missing experiment is identified. The next high-value tasks are manuscript formatting, author metadata, and one optional scientific strengthening experiment if compute is available later.
+
+## Additional update (tables renumber + docx)
+- Assigned formal numbers to all Results tables: Table 4-9.
+- Synced OLT manuscript DOCX from the updated Markdown.
+- Backup: sci_manuscript_OLT_target_2026-07-10.docx.bak_2026-07-10_tables

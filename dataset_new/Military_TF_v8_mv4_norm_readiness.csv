@@ -1,0 +1,3 @@
+class_name,raw_models,gate_pngs,grouped_samples,valid_samples,incomplete_samples,train_ready
+true3d,0,528,176,176,0,True
+flat_false,0,528,176,176,0,True

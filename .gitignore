@@ -23,5 +23,17 @@ dataset/
 dataset_gate_tests/
 dataset_gate_spacing_*/
 dataset_new/Military_3D_Dataset/
+dataset_new/Military_3D_FlatEcho_Selected44*/
+dataset_new/Military_3D_Gated_Selected44/
+dataset_new/Military_3D_Gated_Selected44_blender*/
+dataset_new/Military_3D_HardFlatRectOverlap_Selected44/
+dataset_new/Military_3D_HardFlatProjection_Selected44/
+dataset_new/Military_3D_Selected44/
+dataset_new/Military_FlatFalse_Selected44*/
+dataset_new/Military_TrueFalse_Selected44*/
+dataset_new/_smoke*
 dataset_new/slice_test*/
 dataset_new/truck_*/
+
+# Generated experiment run folders; keep curated top-level CSV summaries.
+experiments/*/

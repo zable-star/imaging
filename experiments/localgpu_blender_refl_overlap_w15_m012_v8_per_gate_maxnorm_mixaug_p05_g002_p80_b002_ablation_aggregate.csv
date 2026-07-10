@@ -1,0 +1,5 @@
+input,num_runs,mean_best_val_acc,std_best_val_acc,min_best_val_acc,max_best_val_acc,seeds
+Full 3-gate stack,3,0.9697,0.0525,0.9091,1.0000,42/332/2026
+Gate 0 only,3,0.9091,0.0909,0.8182,1.0000,42/332/2026
+Gate 1 only,3,0.7273,0.0909,0.6364,0.8182,42/332/2026
+Gate 2 only,3,0.8939,0.0525,0.8636,0.9545,42/332/2026

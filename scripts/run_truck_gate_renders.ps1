@@ -12,6 +12,20 @@ else {
         Select-Object -First 1 -ExpandProperty Source
 }
 if (-not $Blender) {
+    foreach ($Dir in Get-ChildItem -Path "E:\" -Directory -ErrorAction SilentlyContinue) {
+        foreach ($ExeName in @("blender.exe", "blender-launcher.exe")) {
+            $Candidate = Join-Path $Dir.FullName $ExeName
+            if (Test-Path -LiteralPath $Candidate) {
+                $Blender = $Candidate
+                break
+            }
+        }
+        if ($Blender) {
+            break
+        }
+    }
+}
+if (-not $Blender) {
     $Blender = Get-ChildItem -Path "E:\" -Recurse -File -Filter "blender-launcher.exe" -ErrorAction SilentlyContinue |
         Select-Object -First 1 -ExpandProperty FullName
 }
@@ -48,7 +62,8 @@ $FalseArgs = @("--background", "--python", $Script, "--") + $CommonArgs + @(
     "--output-root", (Join-Path $Root "truck_flat_false_silhouette_v2"),
     "--target-mode", "flat-echo",
     "--flat-target-gate-index", "0",
-    "--flat-min-response", "0.18"
+    "--flat-min-response", "0.18",
+    "--flat-geometry-mode", "flatten-camera-depth"
 )
 & $Blender @FalseArgs
 if ($LASTEXITCODE -ne 0) {

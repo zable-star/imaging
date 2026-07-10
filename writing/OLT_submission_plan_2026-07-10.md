@@ -69,3 +69,17 @@ This manuscript reports a controlled simulation and validation framework for ran
 - Reference verification: `writing/reference_verification_2026-07-09.md`
 - Main result CSV: `experiments/v8_mv4_domainmix_full_vs_single_gate_eval_aggregate_3seed.csv`
 - Daily progress log: `writing/daily_progress_2026-07-09.md`
+
+## Status Update - 2026-07-10 (presubmission pack)
+
+Completed in this step:
+- Expanded references to 17 and rewrote Related Work.
+- Built advisor-facing complete draft with tables/figures.
+- Added presubmission checklist:
+  - `writing/OLT_presubmission_checklist_2026-07-10.md`
+- Added cover letter draft:
+  - `writing/OLT_cover_letter_2026-07-10.md`
+
+Current decision:
+- Advisor review: ready now.
+- Journal submit: after blocking author/declaration/reference verification items in the checklist.

@@ -1,0 +1,4 @@
+fusion_mode,num_runs,mean_best_val_acc,std_best_val_acc,min_best_val_acc,max_best_val_acc,seeds
+attention,3,0.9697,0.0525,0.9091,1.0000,42/332/2026
+mean,3,0.9545,0.0788,0.8636,1.0000,42/332/2026
+attention_residual,3,1.0000,0.0000,1.0000,1.0000,42/332/2026

@@ -4,6 +4,7 @@ import csv
 import argparse
 import json
 import random
+from contextlib import nullcontext
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -56,8 +57,64 @@ def parse_args():
     parser.add_argument("--gate-attenuation-factor", type=float, default=1.0)
     parser.add_argument("--gate-dropout-mode", choices=GATE_DROPOUT_MODES, default="none")
     parser.add_argument("--gate-dropout-index", type=int, default=0)
+    parser.add_argument("--structured-reflectance-strength", type=float, default=0.0)
+    parser.add_argument("--structured-background-strength", type=float, default=0.0)
+    parser.add_argument("--structured-nuisance-grid-size", type=int, default=9)
+    parser.add_argument("--occlusion-probability", type=float, default=0.0)
+    parser.add_argument("--occlusion-min-fraction", type=float, default=0.04)
+    parser.add_argument("--occlusion-max-fraction", type=float, default=0.12)
+    parser.add_argument("--occlusion-alpha", type=float, default=0.6)
+    parser.add_argument("--preserve-input-max", action="store_true")
+    parser.add_argument(
+        "--degradation-probability",
+        type=float,
+        default=1.0,
+        help="Deterministic per-sample probability of applying configured image/gate degradations.",
+    )
+    parser.add_argument(
+        "--pretrained-model-path",
+        type=Path,
+        default=None,
+        help="Optional checkpoint used to initialize the model for small-sample transfer learning.",
+    )
+    parser.add_argument(
+        "--pretrained-include-classifier",
+        action="store_true",
+        help="Also load classifier weights when they are shape-compatible. By default, classifier weights are skipped.",
+    )
+    parser.add_argument(
+        "--freeze-encoder",
+        action="store_true",
+        help="Freeze the shared SliceEncoder after loading optional pretrained weights.",
+    )
+    parser.add_argument(
+        "--freeze-attention",
+        action="store_true",
+        help="Freeze the gate attention scorer. Usually keep this false for military fine-tuning.",
+    )
+    parser.add_argument(
+        "--freeze-residual",
+        action="store_true",
+        help="Freeze the residual projection used by attention_residual fusion.",
+    )
     parser.add_argument("--epochs", type=int, default=EPOCHS)
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=0,
+        help="DataLoader worker count. Use 2-4 on the lab 3090 machine if disk I/O becomes the bottleneck.",
+    )
+    parser.add_argument(
+        "--use-amp",
+        action="store_true",
+        help="Use CUDA automatic mixed precision when a GPU is available.",
+    )
+    parser.add_argument(
+        "--cudnn-benchmark",
+        action="store_true",
+        help="Enable cuDNN benchmark for faster fixed-size GPU training; disables deterministic cuDNN mode.",
+    )
     parser.add_argument("--lr", type=float, default=LR)
     parser.add_argument("--min-lr", type=float, default=MIN_LR)
     parser.add_argument("--weight-decay", type=float, default=WEIGHT_DECAY)
@@ -65,6 +122,14 @@ def parse_args():
     parser.add_argument("--grad-clip", type=float, default=GRAD_CLIP)
     parser.add_argument("--ema-alpha", type=float, default=EMA_ALPHA)
     parser.add_argument("--val-ratio", type=float, default=VAL_RATIO)
+    parser.add_argument(
+        "--split-group-by-sample-id",
+        action="store_true",
+        help=(
+            "Keep samples with the same sample_id in the same split. "
+            "Use this for paired true/false datasets generated from the same source model."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=SEED)
     return parser.parse_args()
 
@@ -77,13 +142,17 @@ def build_class_dirs(dataset_root: Path, class_names: list[str]) -> dict[str, Pa
     return class_dirs
 
 
-def set_seed(seed: int) -> None:
+def set_seed(seed: int, cudnn_benchmark: bool = False) -> None:
     random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    # 优先保证训练曲线可复现，而不是使用 cuDNN 中最快但可能不确定的卷积算法。
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
+    if cudnn_benchmark:
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.deterministic = False
+    else:
+        # 优先保证训练曲线可复现，而不是使用 cuDNN 中最快但可能不确定的卷积算法。
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
 
 
 def resize_tensor_img(x: torch.Tensor) -> torch.Tensor:
@@ -103,6 +172,25 @@ def transform_gray(img):
 def collate_meta(batch):
     xs, ys, metas = zip(*batch)
     return torch.stack(xs), torch.tensor(ys, dtype=torch.long), list(metas)
+
+
+def autocast_context(device: torch.device, enabled: bool):
+    if not enabled:
+        return nullcontext()
+    if hasattr(torch, "amp") and hasattr(torch.amp, "autocast"):
+        return torch.amp.autocast(device_type=device.type, enabled=enabled)
+    if device.type == "cuda":
+        return torch.cuda.amp.autocast(enabled=enabled)
+    return nullcontext()
+
+
+def make_grad_scaler(enabled: bool):
+    if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+        try:
+            return torch.amp.GradScaler("cuda", enabled=enabled)
+        except TypeError:
+            return torch.amp.GradScaler(enabled=enabled)
+    return torch.cuda.amp.GradScaler(enabled=enabled)
 
 
 class SliceInputViewDataset(Dataset):
@@ -165,6 +253,15 @@ class SliceDegradationDataset(Dataset):
         gate_attenuation_factor: float = 1.0,
         gate_dropout_mode: str = "none",
         gate_dropout_index: int = 0,
+        structured_reflectance_strength: float = 0.0,
+        structured_background_strength: float = 0.0,
+        structured_nuisance_grid_size: int = 9,
+        occlusion_probability: float = 0.0,
+        occlusion_min_fraction: float = 0.04,
+        occlusion_max_fraction: float = 0.12,
+        occlusion_alpha: float = 0.6,
+        preserve_input_max: bool = False,
+        degradation_probability: float = 1.0,
     ) -> None:
         if gate_dropout_mode not in GATE_DROPOUT_MODES:
             raise ValueError(f"Unsupported gate_dropout_mode: {gate_dropout_mode}")
@@ -178,6 +275,20 @@ class SliceDegradationDataset(Dataset):
             raise ValueError("background_sigma must be positive")
         if not 0.0 <= gate_attenuation_factor <= 1.0:
             raise ValueError("gate_attenuation_factor must be in [0, 1]")
+        if structured_reflectance_strength < 0.0:
+            raise ValueError("structured_reflectance_strength must be non-negative")
+        if structured_background_strength < 0.0:
+            raise ValueError("structured_background_strength must be non-negative")
+        if structured_nuisance_grid_size < 2:
+            raise ValueError("structured_nuisance_grid_size must be at least 2")
+        if not 0.0 <= occlusion_probability <= 1.0:
+            raise ValueError("occlusion_probability must be in [0, 1]")
+        if occlusion_min_fraction < 0.0 or occlusion_max_fraction < occlusion_min_fraction:
+            raise ValueError("occlusion fraction range must be non-negative and ordered")
+        if not 0.0 <= occlusion_alpha <= 1.0:
+            raise ValueError("occlusion_alpha must be in [0, 1]")
+        if not 0.0 <= degradation_probability <= 1.0:
+            raise ValueError("degradation_probability must be in [0, 1]")
 
         self.dataset = dataset
         self.seed = seed
@@ -189,6 +300,15 @@ class SliceDegradationDataset(Dataset):
         self.gate_attenuation_factor = gate_attenuation_factor
         self.gate_dropout_mode = gate_dropout_mode
         self.gate_dropout_index = gate_dropout_index
+        self.structured_reflectance_strength = structured_reflectance_strength
+        self.structured_background_strength = structured_background_strength
+        self.structured_nuisance_grid_size = structured_nuisance_grid_size
+        self.occlusion_probability = occlusion_probability
+        self.occlusion_min_fraction = occlusion_min_fraction
+        self.occlusion_max_fraction = occlusion_max_fraction
+        self.occlusion_alpha = occlusion_alpha
+        self.preserve_input_max = preserve_input_max
+        self.degradation_probability = degradation_probability
         self.samples = dataset.samples
         self.class_names = dataset.class_names
         self.num_slices = dataset.num_slices
@@ -200,10 +320,11 @@ class SliceDegradationDataset(Dataset):
     def __getitem__(self, index: int):
         x, y, meta = self.dataset[index]
         meta = dict(meta)
-        enabled = self._enabled()
+        configured = self._enabled()
+        enabled = configured and self.should_apply_degradation(index)
         if enabled:
             x = self.apply_degradation(x, index)
-        meta.update(self.degradation_meta(index, x.shape[0], enabled))
+        meta.update(self.degradation_meta(index, x.shape[0], configured, enabled))
         return x, y, meta
 
     def _enabled(self) -> bool:
@@ -214,16 +335,35 @@ class SliceDegradationDataset(Dataset):
                 self.background_scatter > 0.0,
                 self.gate_attenuation_index >= 0 and self.gate_attenuation_factor < 1.0,
                 self.gate_dropout_mode != "none",
+                self.structured_reflectance_strength > 0.0,
+                self.structured_background_strength > 0.0,
+                self.occlusion_probability > 0.0,
             ]
         )
 
     def _generator(self, index: int, offset: int = 0) -> torch.Generator:
         return torch.Generator().manual_seed(self.seed + index * 1009 + offset)
 
-    def degradation_meta(self, index: int, num_slices: int, enabled: bool) -> dict[str, object]:
-        drop_gate = self.resolve_dropout_gate(index, num_slices)
+    def should_apply_degradation(self, index: int) -> bool:
+        if self.degradation_probability >= 1.0:
+            return True
+        if self.degradation_probability <= 0.0:
+            return False
+        draw = torch.rand((), generator=self._generator(index, offset=73)).item()
+        return bool(draw < self.degradation_probability)
+
+    def degradation_meta(
+        self,
+        index: int,
+        num_slices: int,
+        configured: bool,
+        enabled: bool,
+    ) -> dict[str, object]:
+        drop_gate = self.resolve_dropout_gate(index, num_slices) if enabled else -1
         return {
+            "degradation_configured": configured,
             "degradation_enabled": enabled,
+            "degradation_probability": self.degradation_probability,
             "gaussian_noise_std": self.gaussian_noise_std,
             "poisson_peak": self.poisson_peak,
             "background_scatter": self.background_scatter,
@@ -233,6 +373,14 @@ class SliceDegradationDataset(Dataset):
             "gate_dropout_mode": self.gate_dropout_mode,
             "gate_dropout_index": self.gate_dropout_index,
             "resolved_gate_dropout_index": drop_gate,
+            "structured_reflectance_strength": self.structured_reflectance_strength,
+            "structured_background_strength": self.structured_background_strength,
+            "structured_nuisance_grid_size": self.structured_nuisance_grid_size,
+            "occlusion_probability": self.occlusion_probability,
+            "occlusion_min_fraction": self.occlusion_min_fraction,
+            "occlusion_max_fraction": self.occlusion_max_fraction,
+            "occlusion_alpha": self.occlusion_alpha,
+            "preserve_input_max": self.preserve_input_max,
         }
 
     def resolve_dropout_gate(self, index: int, num_slices: int) -> int:
@@ -246,6 +394,7 @@ class SliceDegradationDataset(Dataset):
     def apply_degradation(self, x: torch.Tensor, index: int) -> torch.Tensor:
         out = x.clone()
         num_slices = out.shape[0]
+        input_max = torch.max(out).detach()
 
         if 0 <= self.gate_attenuation_index < num_slices and self.gate_attenuation_factor < 1.0:
             out[self.gate_attenuation_index] *= self.gate_attenuation_factor
@@ -253,6 +402,20 @@ class SliceDegradationDataset(Dataset):
         drop_gate = self.resolve_dropout_gate(index, num_slices)
         if drop_gate >= 0:
             out[drop_gate] = 0.0
+
+        structured_enabled = any(
+            [
+                self.structured_reflectance_strength > 0.0,
+                self.structured_background_strength > 0.0,
+                self.occlusion_probability > 0.0,
+            ]
+        )
+        if structured_enabled:
+            out = self.apply_structured_nuisance(out, index)
+            if self.preserve_input_max and float(input_max) > 0.0:
+                max_value = torch.max(out).detach()
+                if float(max_value) > 0.0:
+                    out = out * (input_max / max_value)
 
         if self.background_scatter > 0.0:
             out = out + self._background_like(out, index) * self.background_scatter
@@ -272,6 +435,70 @@ class SliceDegradationDataset(Dataset):
             out = out + noise * self.gaussian_noise_std
 
         return torch.clamp(out, 0.0, 1.0)
+
+    def apply_structured_nuisance(self, x: torch.Tensor, index: int) -> torch.Tensor:
+        out = x
+        if self.structured_reflectance_strength > 0.0:
+            field = self._low_frequency_field(x, index, offset=83)
+            reflectance = torch.clamp(1.0 + field * self.structured_reflectance_strength, 0.45, 1.65)
+            out = out * reflectance
+
+        if self.occlusion_probability > 0.0 and self._should_apply_occlusion(index):
+            out = out * self._occlusion_multiplier(out, index)
+
+        if self.structured_background_strength > 0.0:
+            field = self._low_frequency_field(x, index, offset=97)
+            background = torch.clamp(0.5 + 0.22 * field, 0.0, 1.0)
+            out = out + background * self.structured_background_strength
+        return out
+
+    def _low_frequency_field(self, reference: torch.Tensor, index: int, offset: int) -> torch.Tensor:
+        h, w = reference.shape[-2:]
+        grid = self.structured_nuisance_grid_size
+        coarse = torch.randn(
+            (1, 1, grid, grid),
+            generator=self._generator(index, offset=offset),
+            dtype=reference.dtype,
+            device=reference.device,
+        )
+        field = torch.nn.functional.interpolate(coarse, size=(h, w), mode="bilinear", align_corners=False)
+        field = field.squeeze(0)
+        field = field - field.mean()
+        std = field.std()
+        if float(std) > 1e-6:
+            field = field / std
+        return field
+
+    def _should_apply_occlusion(self, index: int) -> bool:
+        if self.occlusion_probability >= 1.0:
+            return True
+        draw = torch.rand((), generator=self._generator(index, offset=109)).item()
+        return bool(draw < self.occlusion_probability)
+
+    def _occlusion_multiplier(self, reference: torch.Tensor, index: int) -> torch.Tensor:
+        foreground = reference.max(dim=0).values.squeeze(0) > 1e-4
+        multiplier = torch.ones_like(foreground, dtype=reference.dtype)
+        if not bool(foreground.any()):
+            return multiplier.unsqueeze(0)
+
+        coords = foreground.nonzero()
+        y_min = int(coords[:, 0].min().item())
+        y_max = int(coords[:, 0].max().item())
+        x_min = int(coords[:, 1].min().item())
+        x_max = int(coords[:, 1].max().item())
+        fg_h = max(y_max - y_min + 1, 1)
+        fg_w = max(x_max - x_min + 1, 1)
+        fraction_draw = torch.rand((), generator=self._generator(index, offset=127)).item()
+        fraction = self.occlusion_min_fraction + (self.occlusion_max_fraction - self.occlusion_min_fraction) * fraction_draw
+        aspect = 0.55 + 1.25 * torch.rand((), generator=self._generator(index, offset=131)).item()
+        occ_h = max(2, min(fg_h, int(round(fg_h * max(fraction / max(aspect, 1e-3), 1e-3) ** 0.5))))
+        occ_w = max(2, min(fg_w, int(round(occ_h * aspect))))
+        cy = int(torch.randint(y_min, y_max + 1, (1,), generator=self._generator(index, offset=137)).item())
+        cx = int(torch.randint(x_min, x_max + 1, (1,), generator=self._generator(index, offset=139)).item())
+        y0 = max(y_min, min(y_max + 1 - occ_h, cy - occ_h // 2))
+        x0 = max(x_min, min(x_max + 1 - occ_w, cx - occ_w // 2))
+        multiplier[y0 : y0 + occ_h, x0 : x0 + occ_w] = self.occlusion_alpha
+        return multiplier.unsqueeze(0)
 
     def _background_like(self, reference: torch.Tensor, index: int) -> torch.Tensor:
         noise = torch.rand(
@@ -320,6 +547,49 @@ def stratified_split(dataset: MultiSliceObjectDataset, val_ratio: float, seed: i
     return Subset(dataset, train_indices), Subset(dataset, val_indices)
 
 
+def split_group_id(sample_id: str) -> str:
+    """Return the leakage-control group id for paired and multi-view samples."""
+
+    if sample_id.lower().startswith("domain_") and "__" in sample_id:
+        sample_id = sample_id.split("__", 1)[1]
+    if sample_id.lower().startswith("view_") and "__" in sample_id:
+        return sample_id.split("__", 1)[1]
+    return sample_id
+
+
+def stratified_group_split(dataset: MultiSliceObjectDataset, val_ratio: float, seed: int) -> tuple[Subset, Subset]:
+    """Split by sample_id groups to avoid paired true/false source-model leakage."""
+
+    if not 0.0 < val_ratio < 1.0:
+        raise ValueError(f"val_ratio must be between 0 and 1, got {val_ratio}")
+
+    groups: dict[str, list[int]] = {}
+    for index, sample in enumerate(dataset.samples):
+        groups.setdefault(split_group_id(sample.sample_id), []).append(index)
+
+    groups_by_primary_label: dict[int, list[list[int]]] = {}
+    for indices in groups.values():
+        labels = sorted({dataset.samples[index].label for index in indices})
+        primary_label = labels[0]
+        groups_by_primary_label.setdefault(primary_label, []).append(indices)
+
+    rng = random.Random(seed)
+    train_indices: list[int] = []
+    val_indices: list[int] = []
+    for primary_label in sorted(groups_by_primary_label):
+        label_groups = groups_by_primary_label[primary_label][:]
+        rng.shuffle(label_groups)
+        val_count = int(round(len(label_groups) * val_ratio))
+        if len(label_groups) > 1:
+            val_count = min(max(val_count, 1), len(label_groups) - 1)
+        for group in label_groups[:val_count]:
+            val_indices.extend(group)
+        for group in label_groups[val_count:]:
+            train_indices.extend(group)
+
+    return Subset(dataset, train_indices), Subset(dataset, val_indices)
+
+
 def ema(values: list[float], alpha: float) -> list[float]:
     """指数滑动平均，只用于让曲线图更容易观察趋势。"""
 
@@ -330,6 +600,88 @@ def ema(values: list[float], alpha: float) -> list[float]:
     for value in values[1:]:
         smoothed.append(alpha * value + (1.0 - alpha) * smoothed[-1])
     return smoothed
+
+
+def count_parameters(model: nn.Module) -> tuple[int, int]:
+    total = sum(parameter.numel() for parameter in model.parameters())
+    trainable = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
+    return total, trainable
+
+
+def set_module_trainable(module: nn.Module | None, trainable: bool) -> None:
+    if module is None:
+        return
+    for parameter in module.parameters():
+        parameter.requires_grad = trainable
+
+
+def configure_finetuning(
+    model: SliceAttentionClassifier,
+    freeze_encoder: bool = False,
+    freeze_attention: bool = False,
+    freeze_residual: bool = False,
+) -> None:
+    """Apply lightweight transfer-learning freezes for small military datasets."""
+
+    set_module_trainable(model.encoder, not freeze_encoder)
+    set_module_trainable(model.attention, not freeze_attention)
+    set_module_trainable(model.residual_projection, not freeze_residual)
+
+
+def _extract_state_dict(checkpoint: object) -> dict[str, torch.Tensor]:
+    if isinstance(checkpoint, dict):
+        for key in ("model_state_dict", "state_dict"):
+            nested = checkpoint.get(key)
+            if isinstance(nested, dict):
+                return nested
+        if all(isinstance(key, str) for key in checkpoint):
+            return checkpoint
+    raise ValueError("Checkpoint does not contain a PyTorch state_dict.")
+
+
+def load_pretrained_weights(
+    model: SliceAttentionClassifier,
+    checkpoint_path: Path,
+    device: torch.device,
+    include_classifier: bool = False,
+) -> dict[str, object]:
+    """Load shape-compatible weights while allowing a new classifier head."""
+
+    try:
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    except TypeError:
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+    pretrained_state = _extract_state_dict(checkpoint)
+    current_state = model.state_dict()
+    compatible_state = {}
+    loaded_keys: list[str] = []
+    skipped_keys: list[str] = []
+
+    for key, value in pretrained_state.items():
+        normalized_key = key[7:] if key.startswith("module.") else key
+        if normalized_key.startswith("classifier.") and not include_classifier:
+            skipped_keys.append(normalized_key)
+            continue
+        if normalized_key not in current_state:
+            skipped_keys.append(normalized_key)
+            continue
+        if tuple(current_state[normalized_key].shape) != tuple(value.shape):
+            skipped_keys.append(normalized_key)
+            continue
+        compatible_state[normalized_key] = value
+        loaded_keys.append(normalized_key)
+
+    current_state.update(compatible_state)
+    model.load_state_dict(current_state)
+
+    return {
+        "path": str(checkpoint_path),
+        "include_classifier": include_classifier,
+        "loaded_keys": loaded_keys,
+        "skipped_keys": skipped_keys,
+        "loaded_key_count": len(loaded_keys),
+        "skipped_key_count": len(skipped_keys),
+    }
 
 
 def plot_curves(history: dict[str, list[float]], out_path: Path) -> None:
@@ -378,7 +730,7 @@ def plot_confusion(cm, class_names, out_path: Path) -> None:
 
 
 @torch.no_grad()
-def evaluate(model, loader, criterion, device):
+def evaluate(model, loader, criterion, device, use_amp: bool = False):
     model.eval()
     total_loss = 0.0
     total = 0
@@ -390,8 +742,9 @@ def evaluate(model, loader, criterion, device):
     for x, y, metas in loader:
         x = x.to(device)
         y = y.to(device)
-        logits, attn_weights, _ = model(x)
-        loss = criterion(logits, y)
+        with autocast_context(device, use_amp):
+            logits, attn_weights, _ = model(x)
+            loss = criterion(logits, y)
 
         probs = torch.softmax(logits, dim=1)
         preds = torch.argmax(probs, dim=1)
@@ -412,7 +765,9 @@ def evaluate(model, loader, criterion, device):
             for key in (
                 "input_mode",
                 "single_gate_index",
+                "degradation_configured",
                 "degradation_enabled",
+                "degradation_probability",
                 "gaussian_noise_std",
                 "poisson_peak",
                 "background_scatter",
@@ -421,6 +776,14 @@ def evaluate(model, loader, criterion, device):
                 "gate_attenuation_factor",
                 "gate_dropout_mode",
                 "resolved_gate_dropout_index",
+                "structured_reflectance_strength",
+                "structured_background_strength",
+                "structured_nuisance_grid_size",
+                "occlusion_probability",
+                "occlusion_min_fraction",
+                "occlusion_max_fraction",
+                "occlusion_alpha",
+                "preserve_input_max",
             ):
                 if key in meta:
                     row[key] = meta[key]
@@ -491,7 +854,9 @@ def save_history_csv(history: dict[str, list[float]], out_path: Path) -> None:
 
 def main():
     args = parse_args()
-    set_seed(args.seed)
+    if args.num_workers < 0:
+        raise ValueError("num_workers must be non-negative")
+    set_seed(args.seed, cudnn_benchmark=args.cudnn_benchmark)
     args.artifact_dir.mkdir(parents=True, exist_ok=True)
     args.model_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -512,9 +877,21 @@ def main():
         gate_attenuation_factor=args.gate_attenuation_factor,
         gate_dropout_mode=args.gate_dropout_mode,
         gate_dropout_index=args.gate_dropout_index,
+        structured_reflectance_strength=args.structured_reflectance_strength,
+        structured_background_strength=args.structured_background_strength,
+        structured_nuisance_grid_size=args.structured_nuisance_grid_size,
+        occlusion_probability=args.occlusion_probability,
+        occlusion_min_fraction=args.occlusion_min_fraction,
+        occlusion_max_fraction=args.occlusion_max_fraction,
+        occlusion_alpha=args.occlusion_alpha,
+        preserve_input_max=args.preserve_input_max,
+        degradation_probability=args.degradation_probability,
     )
 
-    train_set, val_set = stratified_split(dataset, args.val_ratio, args.seed)
+    if args.split_group_by_sample_id:
+        train_set, val_set = stratified_group_split(dataset, args.val_ratio, args.seed)
+    else:
+        train_set, val_set = stratified_split(dataset, args.val_ratio, args.seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     generator = torch.Generator().manual_seed(args.seed)
@@ -525,6 +902,7 @@ def main():
         collate_fn=collate_meta,
         generator=generator,
         pin_memory=device.type == "cuda",
+        num_workers=args.num_workers,
     )
     val_loader = DataLoader(
         val_set,
@@ -532,6 +910,7 @@ def main():
         shuffle=False,
         collate_fn=collate_meta,
         pin_memory=device.type == "cuda",
+        num_workers=args.num_workers,
     )
 
     model = SliceAttentionClassifier(
@@ -539,11 +918,39 @@ def main():
         fusion_mode=args.fusion_mode,
         num_slices=dataset.effective_num_input_slices,
     ).to(device)
+    pretrained_report = None
+    if args.pretrained_model_path is not None:
+        pretrained_report = load_pretrained_weights(
+            model,
+            args.pretrained_model_path,
+            device,
+            include_classifier=args.pretrained_include_classifier,
+        )
+        print(
+            "Loaded pretrained weights: "
+            f"{pretrained_report['loaded_key_count']} keys loaded, "
+            f"{pretrained_report['skipped_key_count']} keys skipped."
+        )
+
+    configure_finetuning(
+        model,
+        freeze_encoder=args.freeze_encoder,
+        freeze_attention=args.freeze_attention,
+        freeze_residual=args.freeze_residual,
+    )
+    total_parameters, trainable_parameters = count_parameters(model)
+    if trainable_parameters == 0:
+        raise RuntimeError("No trainable parameters remain after applying freeze options.")
+
     # label smoothing 能降低模型在小数据集上的过度自信。
     train_criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
     # 验证集 loss 不使用 smoothing，这样数值仍然对应标准交叉熵。
     eval_criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = torch.optim.AdamW(
+        [parameter for parameter in model.parameters() if parameter.requires_grad],
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+    )
     # 余弦退火会逐渐降低学习率，减少训练后期的曲线震荡。
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.min_lr)
 
@@ -551,6 +958,8 @@ def main():
     best_acc = -1.0
     best_rows = []
     best_cm = None
+    amp_enabled = bool(args.use_amp and device.type == "cuda")
+    scaler = make_grad_scaler(enabled=amp_enabled)
 
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -562,19 +971,22 @@ def main():
             y = y.to(device)
 
             optimizer.zero_grad(set_to_none=True)
-            logits, _, _ = model(x)
-            loss = train_criterion(logits, y)
-            loss.backward()
+            with autocast_context(device, amp_enabled):
+                logits, _, _ = model(x)
+                loss = train_criterion(logits, y)
+            scaler.scale(loss).backward()
             # 梯度裁剪限制偶发的大梯度，避免某个 batch 导致 loss 突然尖峰。
             if args.grad_clip > 0:
+                scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
-            optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
 
             running_loss += loss.item() * x.size(0)
             running_total += x.size(0)
 
         train_loss = running_loss / max(running_total, 1)
-        metrics = evaluate(model, val_loader, eval_criterion, device)
+        metrics = evaluate(model, val_loader, eval_criterion, device, use_amp=amp_enabled)
         current_lr = optimizer.param_groups[0]["lr"]
 
         history["train_loss"].append(train_loss)
@@ -623,11 +1035,36 @@ def main():
         "gate_attenuation_factor": args.gate_attenuation_factor,
         "gate_dropout_mode": args.gate_dropout_mode,
         "gate_dropout_index": args.gate_dropout_index,
+        "structured_reflectance_strength": args.structured_reflectance_strength,
+        "structured_background_strength": args.structured_background_strength,
+        "structured_nuisance_grid_size": args.structured_nuisance_grid_size,
+        "occlusion_probability": args.occlusion_probability,
+        "occlusion_min_fraction": args.occlusion_min_fraction,
+        "occlusion_max_fraction": args.occlusion_max_fraction,
+        "occlusion_alpha": args.occlusion_alpha,
+        "preserve_input_max": args.preserve_input_max,
+        "degradation_probability": args.degradation_probability,
+        "pretrained_model_path": str(args.pretrained_model_path) if args.pretrained_model_path is not None else "",
+        "pretrained_include_classifier": args.pretrained_include_classifier,
+        "pretrained_loaded_key_count": pretrained_report["loaded_key_count"] if pretrained_report else 0,
+        "pretrained_skipped_key_count": pretrained_report["skipped_key_count"] if pretrained_report else 0,
+        "pretrained_loaded_keys": pretrained_report["loaded_keys"] if pretrained_report else [],
+        "pretrained_skipped_keys": pretrained_report["skipped_keys"] if pretrained_report else [],
+        "freeze_encoder": args.freeze_encoder,
+        "freeze_attention": args.freeze_attention,
+        "freeze_residual": args.freeze_residual,
+        "total_parameters": total_parameters,
+        "trainable_parameters": trainable_parameters,
         "best_val_acc": best_acc,
         "seed": args.seed,
         "epochs": args.epochs,
         "batch_size": args.batch_size,
+        "num_workers": args.num_workers,
+        "use_amp": args.use_amp,
+        "amp_enabled": amp_enabled,
+        "cudnn_benchmark": args.cudnn_benchmark,
         "val_ratio": args.val_ratio,
+        "split_group_by_sample_id": args.split_group_by_sample_id,
         "expected_num_slices": args.expected_num_slices,
         "lr": args.lr,
         "min_lr": args.min_lr,

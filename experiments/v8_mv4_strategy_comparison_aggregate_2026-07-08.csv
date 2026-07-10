@@ -1,0 +1,16 @@
+strategy_id,strategy,condition,condition_label,num_runs,mean_acc,std_acc,min_acc,max_acc,seeds
+normal_mixaug,Normal mixaug,clean,Clean,3,0.9848484848484849,0.026243194054073875,0.9545454545454546,1.0,42 332 2026
+normal_mixaug,Normal mixaug,light_noise_g002_p80_b002,Light noise,3,0.9810606060606061,0.032803992567592345,0.9431818181818182,1.0,42 332 2026
+normal_mixaug,Normal mixaug,strong_noise_g005_p30_b005,Strong noise,3,0.9204545454545454,0.07451634686706818,0.8522727272727273,1.0,42 332 2026
+normal_mixaug,Normal mixaug,hard_nuisance_v3_mild,Hard mild,3,0.5,0.0,0.5,0.5,42 332 2026
+normal_mixaug,Normal mixaug,hard_nuisance_v2,Hard strong,3,0.5,0.0,0.5,0.5,42 332 2026
+online_nuisance,Online nuisance,clean,Clean,3,0.9696969696969697,0.05248638810814781,0.9090909090909091,1.0,42 332 2026
+online_nuisance,Online nuisance,light_noise_g002_p80_b002,Light noise,3,0.7878787878787878,0.13886593015017698,0.6363636363636364,0.9090909090909091,42 332 2026
+online_nuisance,Online nuisance,strong_noise_g005_p30_b005,Strong noise,3,0.5606060606060606,0.06943296507508849,0.5,0.6363636363636364,42 332 2026
+online_nuisance,Online nuisance,hard_nuisance_v3_mild,Hard mild,3,0.5,0.0,0.5,0.5,42 332 2026
+online_nuisance,Online nuisance,hard_nuisance_v2,Hard strong,3,0.5,0.0,0.5,0.5,42 332 2026
+domainmix_strongaug,Domain mix + strong noise,clean,Clean,3,0.9393939393939394,0.026243194054073937,0.9090909090909091,0.9545454545454546,42 332 2026
+domainmix_strongaug,Domain mix + strong noise,light_noise_g002_p80_b002,Light noise,3,0.9242424242424242,0.026243194054073937,0.9090909090909091,0.9545454545454546,42 332 2026
+domainmix_strongaug,Domain mix + strong noise,strong_noise_g005_p30_b005,Strong noise,3,0.9090909090909091,0.0,0.9090909090909091,0.9090909090909091,42 332 2026
+domainmix_strongaug,Domain mix + strong noise,hard_nuisance_v3_mild,Hard mild,3,0.9393939393939393,0.05248638810814781,0.9090909090909091,1.0,42 332 2026
+domainmix_strongaug,Domain mix + strong noise,hard_nuisance_v2,Hard strong,3,0.7727272727272727,0.0,0.7727272727272727,0.7727272727272727,42 332 2026

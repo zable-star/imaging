@@ -43,8 +43,29 @@ RESULT_FIELDNAMES = [
     "gate_attenuation_factor",
     "gate_dropout_mode",
     "gate_dropout_index",
+    "structured_reflectance_strength",
+    "structured_background_strength",
+    "structured_nuisance_grid_size",
+    "occlusion_probability",
+    "occlusion_min_fraction",
+    "occlusion_max_fraction",
+    "occlusion_alpha",
+    "preserve_input_max",
+    "pretrained_model_path",
+    "pretrained_include_classifier",
+    "pretrained_loaded_key_count",
+    "pretrained_skipped_key_count",
+    "freeze_encoder",
+    "freeze_attention",
+    "freeze_residual",
+    "total_parameters",
+    "trainable_parameters",
     "epochs",
     "batch_size",
+    "num_workers",
+    "use_amp",
+    "amp_enabled",
+    "cudnn_benchmark",
     "lr",
     "min_lr",
     "weight_decay",
@@ -52,6 +73,7 @@ RESULT_FIELDNAMES = [
     "grad_clip",
     "ema_alpha",
     "val_ratio",
+    "split_group_by_sample_id",
     "expected_num_slices",
 ]
 
@@ -109,8 +131,25 @@ def parse_args(argv: Sequence[str] | None = None) -> tuple[argparse.Namespace, l
     parser.add_argument("--gate-attenuation-factor", type=float, default=1.0)
     parser.add_argument("--gate-dropout-mode", choices=["none", "fixed", "random"], default="none")
     parser.add_argument("--gate-dropout-index", type=int, default=0)
+    parser.add_argument("--structured-reflectance-strength", type=float, default=0.0)
+    parser.add_argument("--structured-background-strength", type=float, default=0.0)
+    parser.add_argument("--structured-nuisance-grid-size", type=int, default=9)
+    parser.add_argument("--occlusion-probability", type=float, default=0.0)
+    parser.add_argument("--occlusion-min-fraction", type=float, default=0.04)
+    parser.add_argument("--occlusion-max-fraction", type=float, default=0.12)
+    parser.add_argument("--occlusion-alpha", type=float, default=0.6)
+    parser.add_argument("--preserve-input-max", action="store_true")
+    parser.add_argument("--degradation-probability", type=float, default=1.0)
+    parser.add_argument("--pretrained-model-path", type=Path, default=None)
+    parser.add_argument("--pretrained-include-classifier", action="store_true")
+    parser.add_argument("--freeze-encoder", action="store_true")
+    parser.add_argument("--freeze-attention", action="store_true")
+    parser.add_argument("--freeze-residual", action="store_true")
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--use-amp", action="store_true")
+    parser.add_argument("--cudnn-benchmark", action="store_true")
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--min-lr", type=float, default=1e-5)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
@@ -118,6 +157,7 @@ def parse_args(argv: Sequence[str] | None = None) -> tuple[argparse.Namespace, l
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--ema-alpha", type=float, default=0.35)
     parser.add_argument("--val-ratio", type=float, default=0.2)
+    parser.add_argument("--split-group-by-sample-id", action="store_true")
     parser.add_argument("--results-csv", type=Path, default=None)
     parser.add_argument("--aggregate-csv", type=Path, default=None)
     parser.add_argument("--skip-existing", action="store_true")
@@ -138,6 +178,8 @@ def normalize_paths(args: argparse.Namespace) -> None:
         args.results_csv = args.results_csv.resolve()
     if args.aggregate_csv is not None:
         args.aggregate_csv = args.aggregate_csv.resolve()
+    if args.pretrained_model_path is not None:
+        args.pretrained_model_path = args.pretrained_model_path.resolve()
 
 
 def build_experiment_specs(args: argparse.Namespace) -> list[ExperimentSpec]:
@@ -197,10 +239,40 @@ def build_train_command(
         str(args.gate_dropout_mode),
         "--gate-dropout-index",
         str(args.gate_dropout_index),
+        "--structured-reflectance-strength",
+        str(args.structured_reflectance_strength),
+        "--structured-background-strength",
+        str(args.structured_background_strength),
+        "--structured-nuisance-grid-size",
+        str(args.structured_nuisance_grid_size),
+        "--occlusion-probability",
+        str(args.occlusion_probability),
+        "--occlusion-min-fraction",
+        str(args.occlusion_min_fraction),
+        "--occlusion-max-fraction",
+        str(args.occlusion_max_fraction),
+        "--occlusion-alpha",
+        str(args.occlusion_alpha),
+        *(["--preserve-input-max"] if args.preserve_input_max else []),
+        "--degradation-probability",
+        str(args.degradation_probability),
+        *(
+            ["--pretrained-model-path", str(args.pretrained_model_path)]
+            if args.pretrained_model_path is not None
+            else []
+        ),
+        *(["--pretrained-include-classifier"] if args.pretrained_include_classifier else []),
+        *(["--freeze-encoder"] if args.freeze_encoder else []),
+        *(["--freeze-attention"] if args.freeze_attention else []),
+        *(["--freeze-residual"] if args.freeze_residual else []),
         "--epochs",
         str(args.epochs),
         "--batch-size",
         str(args.batch_size),
+        "--num-workers",
+        str(args.num_workers),
+        *(["--use-amp"] if args.use_amp else []),
+        *(["--cudnn-benchmark"] if args.cudnn_benchmark else []),
         "--lr",
         str(args.lr),
         "--min-lr",
@@ -215,6 +287,7 @@ def build_train_command(
         str(args.ema_alpha),
         "--val-ratio",
         str(args.val_ratio),
+        *(["--split-group-by-sample-id"] if args.split_group_by_sample_id else []),
         "--seed",
         str(spec.seed),
         *extra_train_args,
@@ -259,8 +332,41 @@ def make_result_row(
         "gate_attenuation_factor": summary.get("gate_attenuation_factor", args.gate_attenuation_factor),
         "gate_dropout_mode": summary.get("gate_dropout_mode", args.gate_dropout_mode),
         "gate_dropout_index": summary.get("gate_dropout_index", args.gate_dropout_index),
+        "structured_reflectance_strength": summary.get(
+            "structured_reflectance_strength", args.structured_reflectance_strength
+        ),
+        "structured_background_strength": summary.get(
+            "structured_background_strength", args.structured_background_strength
+        ),
+        "structured_nuisance_grid_size": summary.get(
+            "structured_nuisance_grid_size", args.structured_nuisance_grid_size
+        ),
+        "occlusion_probability": summary.get("occlusion_probability", args.occlusion_probability),
+        "occlusion_min_fraction": summary.get("occlusion_min_fraction", args.occlusion_min_fraction),
+        "occlusion_max_fraction": summary.get("occlusion_max_fraction", args.occlusion_max_fraction),
+        "occlusion_alpha": summary.get("occlusion_alpha", args.occlusion_alpha),
+        "preserve_input_max": summary.get("preserve_input_max", args.preserve_input_max),
+        "pretrained_model_path": summary.get(
+            "pretrained_model_path",
+            str(args.pretrained_model_path) if args.pretrained_model_path is not None else "",
+        ),
+        "pretrained_include_classifier": summary.get(
+            "pretrained_include_classifier",
+            args.pretrained_include_classifier,
+        ),
+        "pretrained_loaded_key_count": summary.get("pretrained_loaded_key_count", ""),
+        "pretrained_skipped_key_count": summary.get("pretrained_skipped_key_count", ""),
+        "freeze_encoder": summary.get("freeze_encoder", args.freeze_encoder),
+        "freeze_attention": summary.get("freeze_attention", args.freeze_attention),
+        "freeze_residual": summary.get("freeze_residual", args.freeze_residual),
+        "total_parameters": summary.get("total_parameters", ""),
+        "trainable_parameters": summary.get("trainable_parameters", ""),
         "epochs": summary.get("epochs", args.epochs),
         "batch_size": summary.get("batch_size", args.batch_size),
+        "num_workers": summary.get("num_workers", args.num_workers),
+        "use_amp": summary.get("use_amp", args.use_amp),
+        "amp_enabled": summary.get("amp_enabled", ""),
+        "cudnn_benchmark": summary.get("cudnn_benchmark", args.cudnn_benchmark),
         "lr": summary.get("lr", args.lr),
         "min_lr": summary.get("min_lr", args.min_lr),
         "weight_decay": summary.get("weight_decay", args.weight_decay),
@@ -268,6 +374,7 @@ def make_result_row(
         "grad_clip": summary.get("grad_clip", args.grad_clip),
         "ema_alpha": summary.get("ema_alpha", args.ema_alpha),
         "val_ratio": summary.get("val_ratio", args.val_ratio),
+        "split_group_by_sample_id": summary.get("split_group_by_sample_id", args.split_group_by_sample_id),
         "expected_num_slices": summary.get("expected_num_slices", args.expected_num_slices),
     }
 

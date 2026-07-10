@@ -1,0 +1,10 @@
+eval_condition,fusion_mode,input,num_runs,mean_acc,std_acc,min_acc,max_acc,seeds
+clean,attention,Full stack attention,3,0.9697,0.0525,0.9091,1.0000,42/332/2026
+clean,mean,Full stack mean,3,0.9545,0.0788,0.8636,1.0000,42/332/2026
+clean,attention_residual,Full stack attention_residual,3,0.9848,0.0263,0.9545,1.0000,42/332/2026
+light_noise_g002_p80_b002,attention,Full stack attention,3,0.9545,0.0455,0.9091,1.0000,42/332/2026
+light_noise_g002_p80_b002,mean,Full stack mean,3,0.9697,0.0525,0.9091,1.0000,42/332/2026
+light_noise_g002_p80_b002,attention_residual,Full stack attention_residual,3,0.9545,0.0455,0.9091,1.0000,42/332/2026
+strong_noise_g005_p30_b005,attention,Full stack attention,3,0.7424,0.1389,0.5909,0.8636,42/332/2026
+strong_noise_g005_p30_b005,mean,Full stack mean,3,0.6515,0.0694,0.5909,0.7273,42/332/2026
+strong_noise_g005_p30_b005,attention_residual,Full stack attention_residual,3,0.6970,0.1721,0.5000,0.8182,42/332/2026
