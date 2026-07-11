@@ -83,3 +83,7 @@ Completed in this step:
 Current decision:
 - Advisor review: ready now.
 - Journal submit: after blocking author/declaration/reference verification items in the checklist.
+
+## Project Summary Document
+
+- Full project summary and submission plan snapshot: writing/project_summary_and_plan_2026-07-11.md
